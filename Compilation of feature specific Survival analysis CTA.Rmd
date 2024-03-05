@@ -1,0 +1,897 @@
+---
+title: "Survival Analysis CTA"
+author: "Lavanya"
+output:
+   BiocStyle::html_document:
+    toc_float: true
+    toc_depth: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+options(java.parameters = "-Xmx8000m")
+packagelist <- c("reshape2", "ggrepel", "ggplot2","dplyr","tidyverse", "formattable","ComplexHeatmap", "pheatmap", "readxl","RColorBrewer","survminer", "survival", "patchwork", "coxme", "conflicted","kableExtra","wesanderson","broom", "gridExtra", "forestplot", "writexl", "GetoptLong","corrplot", "rstatix", "janitor", "org.Hs.eg.db", "clusterProfiler", "msigdbr", "DOSE", "enrichplot" )
+
+for (i in packagelist){
+ suppressPackageStartupMessages(library(i, character.only = TRUE))
+}
+
+source("Uni_multi_coxme_Aug2022.r")
+
+conflict_prefer("filter", "dplyr")
+conflict_prefer("select", "dplyr")
+conflict_prefer("desc", "dplyr")
+conflicts_prefer(clusterProfiler::rename)
+```
+
+# Input files
+
+```{r}
+cols = c("up" = "#e41a1c", "down" = "blue", "ns" = "grey", "DE" = "#ffad73")
+cols = c("Enriched in Tumor-sparse area" = "red", "Enriched in Tumor-rich area" = "blue", "ns" = "grey")
+myPalette <- colorRampPalette(rev(brewer.pal(11, "Spectral")))
+
+cols2 <- brewer.pal(n = 9, name = "Spectral")
+pal1 <- colorRampPalette(cols2)
+
+cols3 <- brewer.pal(n = 11, name = "RdBu")
+pal2 <- colorRampPalette(cols3)
+
+newclinicaldata <- read_excel("Datafiles/BLISS DATABASE NOVEMBER 2022 - NBIS.xlsx") %>% as.data.frame()
+
+CTA <- readxl::read_xlsx("Datafiles/Project_3_immune_MTC_MTH_Sep2023.xlsx") %>% as.data.frame() %>% rename("Within.the.tumor"="Within.the.tumor.postSE") 
+
+n <- 1481 ## total number of probes excluding NPC
+s <- ncol(CTA)-n 
+startwithNPC <- s-1 
+e <- ncol(CTA)
+
+head(CTA[,s:e])
+
+tumormrna <- read_excel("Datafiles/MCD20_Sep 2023.xlsx") %>% as.data.frame() 
+
+tumormrna %>% select(PATID) %>% distinct()
+
+CTA_tumor <-  inner_join(newclinicaldata, tumormrna, by = "PATID")
+CTA_cyto <- inner_join(newclinicaldata, CTA, by = "PATID") %>% dplyr::filter(SegmentLabelNew == "MTC" & Within.the.tumor=="Tumor-rich")
+CTA_helper <- inner_join(newclinicaldata, CTA, by = "PATID") %>% dplyr::filter(SegmentLabelNew == "MTH" & Within.the.tumor=="Tumor-rich")
+```
+
+# Calling for CTA survival output files
+
+```{r}
+inputname <- list("CTA Cox regression outputs/Tumor All_A-Mean.csv", 
+                  "CTA Cox regression outputs/Tumor All_A-Median.csv", 
+                  "CTA Cox regression outputs/Tumor All_coxME.csv", 
+                  
+                  "CTA Cox regression outputs/Helper (All)_A-Mean.csv", 
+                  "CTA Cox regression outputs/Helper (All)_A-Median.csv",  
+                  "CTA Cox regression outputs/Helper (All)_coxME.csv",  
+                  
+                  "CTA Cox regression outputs/Helper (Tumor-rich)_A-Mean.csv",
+                  "CTA Cox regression outputs/Helper (Tumor-rich)_A-Median.csv", 
+                  "CTA Cox regression outputs/Helper (Tumor-rich)_coxME.csv",
+                  
+                  "CTA Cox regression outputs/Helper (Tumor-sparse)_A-Mean.csv", 
+                  "CTA Cox regression outputs/Helper (Tumor-sparse)_A-median.csv", 
+                  "CTA Cox regression outputs/Helper (Tumor-sparse)_coxME.csv",  
+                  
+                  "CTA Cox regression outputs/Cytotoxic (All)_A-Mean.csv", 
+                  "CTA Cox regression outputs/Cytotoxic (All)_A-Median.csv", 
+                  "CTA Cox regression outputs/Cytotoxic (All)_coxME.csv", 
+                  
+                  "CTA Cox regression outputs/Cytotoxic Tumor-rich area_A-Mean.csv", 
+                  "CTA Cox regression outputs/Cytotoxic Tumor-rich area_A-Median.csv",
+                  "CTA Cox regression outputs/Cytotoxic Tumor-rich area_coxME.csv", 
+                  
+                  "CTA Cox regression outputs/Cytotoxic Tumor-sparse area_A-Mean.csv", 
+                  "CTA Cox regression outputs/Cytotoxic Tumor-sparse area_A-Median.csv",
+                  "CTA Cox regression outputs/Cytotoxic Tumor-sparse area_coxME.csv" 
+                  )
+```
+
+
+```{r}
+outputname <- list( "Tumor_All_mean", "Tumor_All_Median", "Tumor_All_CM",
+                    
+                    "Helper_All_mean", "Helper_All_Median", "Helper_All_CM",
+                     "Helper_TR_mean", "Helper_TR_Median", "Helper_TR_CM", 
+                    "Helper_TS_mean", "Helper_TS_Median", "Helper_TS_CM", 
+                    
+                    "Cytotoxic_All_mean", "Cytotoxic_All_Median", "Cytotoxic_All_CM", 
+                     "Cytotoxic_TR_mean", "Cytotoxic_TR_Median", "Cytotoxic_TR_CM", 
+                    "Cytotoxic_TS_mean", "Cytotoxic_TS_Median", "Cytotoxic_TS_CM"
+                   )
+
+datasetname <- list( "Tumor_All_mean", "Tumor_All_Median", "Tumor_All_CM",
+                     
+                    "Helper_All_mean", "Helper_All_Median", "Helper_All_CM", 
+                     "Helper_TR_mean", "Helper_TR_Median", "Helper_TR_CM", 
+                    "Helper_TS_mean", "Helper_TS_Median", "Helper_TS_CM", 
+                    
+                    "Cytotoxic_All_mean", "Cytotoxic_All_Median", "Cytotoxic_All_CM", 
+                    "Cytotoxic_TR_mean", "Cytotoxic_TR_Median", "Cytotoxic_TR_CM", 
+                    "Cytotoxic_TS_mean", "Cytotoxic_TS_Median", "Cytotoxic_TS_CM"
+                  )
+
+datasetname2 <- list("Tumor All", "Tumor All", "Tumor All",
+                     
+                    "Helper All", "Helper All", "Helper All", 
+                    "Helper TR", "Helper TR", "Helper TR", 
+                    "Helper TS", "Helper TS", "Helper TS", 
+                    
+                    "Cytotoxic All", "Cytotoxic All", "Cytotoxic All", 
+                    "Cytotoxic TR", "Cytotoxic TR", "Cytotoxic TR", 
+                    "Cytotoxic TS", "Cytotoxic TS", "Cytotoxic TS"
+                    )
+
+celltype <- list("Tumor", "Tumor", "Tumor", 
+                
+                 "Helper", "Helper", "Helper",
+                 "Helper", "Helper", "Helper",
+                 "Helper", "Helper", "Helper",
+                
+                "Cytotoxic","Cytotoxic","Cytotoxic",
+                "Cytotoxic","Cytotoxic","Cytotoxic",
+                "Cytotoxic","Cytotoxic","Cytotoxic"
+                 )
+
+type <- list("Mean", "Median","CM",
+             
+                "Mean", "Median","CM",
+                  "Mean", "Median","CM",
+                  "Mean", "Median","CM",
+              
+              "Mean", "Median","CM",
+             "Mean", "Median","CM",
+                  "Mean", "Median","CM")
+
+for (i in 1:length(inputname)) {
+  print(i)
+  dataset <-  read.csv(paste0(inputname[[i]])) %>% 
+  as.data.frame() %>% 
+  dplyr::mutate(
+    Dataset = paste0(datasetname2[[i]]), 
+    Celltype = paste0(celltype[[i]]), 
+    ModelType = paste0(type[[i]]), 
+    name = paste0(datasetname[[i]])
+    ) 
+  
+  assign(outputname[[i]], dataset, .GlobalEnv)
+}
+```
+
+## collating the files
+
+```{r}
+Tumor_All_CM <- Tumor_All_CM %>% `colnames<-`(c("SN","Biomarkers", "nvar", "n", "Beta","HR", "95% Lower HR", "95% Upper HR", "SE", "Z", "Pvalue","Pvalue_check", "Dataset", "Celltype", "ModelType", "name")) 
+
+Helper_All_CM <- Helper_All_CM %>% `colnames<-`(c("SN","Biomarkers", "nvar", "n", "Beta","HR", "95% Lower HR", "95% Upper HR", "SE", "Z", "Pvalue","Pvalue_check", "Dataset", "Celltype", "ModelType", "name"))
+Helper_TR_CM <- Helper_TR_CM %>% `colnames<-`(c("SN","Biomarkers", "nvar", "n", "Beta","HR", "95% Lower HR", "95% Upper HR", "SE", "Z", "Pvalue","Pvalue_check", "Dataset", "Celltype", "ModelType", "name")) 
+Helper_TS_CM <- Helper_TS_CM %>% `colnames<-`(c("SN","Biomarkers", "nvar", "n", "Beta","HR", "95% Lower HR", "95% Upper HR", "SE", "Z", "Pvalue","Pvalue_check", "Dataset", "Celltype", "ModelType", "name")) 
+
+ Cytotoxic_All_CM <-  Cytotoxic_All_CM %>% `colnames<-`(c("SN","Biomarkers", "nvar", "n", "Beta","HR", "95% Lower HR", "95% Upper HR", "SE", "Z", "Pvalue","Pvalue_check", "Dataset", "Celltype", "ModelType", "name")) 
+ Cytotoxic_TR_CM <-  Cytotoxic_TR_CM %>% `colnames<-`(c("SN","Biomarkers", "nvar", "n", "Beta","HR", "95% Lower HR", "95% Upper HR", "SE", "Z", "Pvalue","Pvalue_check", "Dataset", "Celltype", "ModelType", "name")) 
+ Cytotoxic_TS_CM <-  Cytotoxic_TS_CM %>% `colnames<-`(c("SN","Biomarkers", "nvar", "n", "Beta","HR", "95% Lower HR", "95% Upper HR", "SE", "Z", "Pvalue","Pvalue_check", "Dataset", "Celltype", "ModelType", "name")) 
+
+ 
+##Tumor
+shortlist0 <- Tumor_All_mean %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist1 <- Tumor_All_Median %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist2 <- Tumor_All_CM %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check,  "Dataset", "Celltype", "ModelType", "name")
+
+compare_table0 <- full_join(shortlist1, shortlist0,by="Biomarkers")
+colnames(compare_table0) <-  c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean")
+
+Tumor_All_merged <- full_join(compare_table0,shortlist2, by="Biomarkers")
+colnames(Tumor_All_merged) <-   c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean","n_CM", "HR_CM", "P_CM", "P_chk_CM", "Dataset", "Celltype", "ModelType", "name")
+
+
+##Helper 
+shortlist0 <- Helper_All_mean %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist1 <- Helper_All_Median %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist2 <- Helper_All_CM %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check,  "Dataset", "Celltype", "ModelType", "name")
+
+compare_table0 <- full_join(shortlist1, shortlist0,by="Biomarkers")
+colnames(compare_table0) <-  c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean")
+
+Helper_All_merged <- full_join(compare_table0,shortlist2, by="Biomarkers")
+colnames(Helper_All_merged) <- c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean","n_CM", "HR_CM", "P_CM", "P_chk_CM", "Dataset", "Celltype", "ModelType", "name")
+
+##Helper Tumor-rich 
+shortlist0 <- Helper_TR_mean %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist1 <- Helper_TR_Median %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist2 <- Helper_TR_CM %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check,  "Dataset", "Celltype", "ModelType", "name")
+
+compare_table0 <- full_join(shortlist1, shortlist0,by="Biomarkers")
+colnames(compare_table0) <-  c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean")
+
+Helper_TR_merged <- full_join(compare_table0,shortlist2, by="Biomarkers")
+colnames(Helper_TR_merged) <- c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean","n_CM", "HR_CM", "P_CM", "P_chk_CM", "Dataset", "Celltype", "ModelType", "name")
+
+
+##Helper Tumor-sparse  
+shortlist0 <- Helper_TS_mean %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist1 <- Helper_TS_Median %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist2 <- Helper_TS_CM %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check,  "Dataset", "Celltype", "ModelType", "name")
+
+compare_table0 <- full_join(shortlist1, shortlist0,by="Biomarkers")
+colnames(compare_table0) <-  c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean")
+
+Helper_TS_merged <- full_join(compare_table0,shortlist2, by="Biomarkers")
+colnames(Helper_TS_merged) <- c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean","n_CM", "HR_CM", "P_CM", "P_chk_CM", "Dataset", "Celltype", "ModelType", "name")
+
+
+##Cytotoxic 
+shortlist0 <- Cytotoxic_All_mean %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist1 <- Cytotoxic_All_Median %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist2 <- Cytotoxic_All_CM %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check,  "Dataset", "Celltype", "ModelType", "name")
+
+compare_table0 <- full_join(shortlist1, shortlist0,by="Biomarkers")
+colnames(compare_table0) <-  c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean")
+
+Cytotoxic_All_merged <- full_join(compare_table0,shortlist2, by="Biomarkers")
+colnames(Cytotoxic_All_merged) <- c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean","n_CM", "HR_CM", "P_CM", "P_chk_CM", "Dataset", "Celltype", "ModelType", "name")
+
+##Cytotoxic Tumor-rich   
+shortlist0 <- Cytotoxic_TR_mean %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist1 <- Cytotoxic_TR_Median %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist2 <- Cytotoxic_TR_CM %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check,  "Dataset", "Celltype", "ModelType", "name")
+
+compare_table0 <- full_join(shortlist1, shortlist0,by="Biomarkers")
+colnames(compare_table0) <-  c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean")
+
+Cytotoxic_TR_merged <- full_join(compare_table0,shortlist2, by="Biomarkers")
+colnames(Cytotoxic_TR_merged) <- c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean","n_CM", "HR_CM", "P_CM", "P_chk_CM", "Dataset", "Celltype", "ModelType", "name")
+
+##Cytotoxic Tumor-sparse  
+shortlist0 <- Cytotoxic_TS_mean %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist1 <- Cytotoxic_TS_Median %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)
+shortlist2 <- Cytotoxic_TS_CM %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check,  "Dataset", "Celltype", "ModelType", "name")
+
+compare_table0 <- full_join(shortlist1, shortlist0,by="Biomarkers")
+colnames(compare_table0) <-  c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean")
+
+Cytotoxic_TS_merged <- full_join(compare_table0,shortlist2, by="Biomarkers")
+colnames(Cytotoxic_TS_merged) <- c( "n_med", "Biomarkers", "HR_med", "P_med", "P_chk_med", "n_mean", "HR_mean", "P_mean", "P_chk_mean","n_CM", "HR_CM", "P_CM", "P_chk_CM", "Dataset", "Celltype", "ModelType", "name")
+```
+
+## Writing new files 
+
+### Merged tables non truncated
+
+```{r}
+#options(java.parameters = "-Xmx1000m")
+library("xlsx")
+conflict_prefer("desc", "dplyr")
+significance <- 0.05
+write.xlsx(Tumor_All_merged %>% relocate(Biomarkers, .before = "n_med"), file = "CTA Cox regression outputs/CTACompiledCOX_CTAData_nontrunc.xlsx", sheetName = "Tumor All samples", append = FALSE)
+
+write.xlsx(Helper_All_merged %>% relocate(Biomarkers, .before = "n_med"), file = "CTA Cox regression outputs/CTACompiledCOX_CTAData_nontrunc.xlsx", sheetName = "Helper subset (All samples)", append = TRUE)
+
+write.xlsx(Helper_TR_merged  %>% relocate(Biomarkers, .before = "n_med"), file = "CTA Cox regression outputs/CTACompiledCOX_CTAData_nontrunc.xlsx", sheetName = "Helper subset (Tumor-rich)", append = TRUE)
+
+write.xlsx(Helper_TS_merged %>% relocate(Biomarkers, .before = "n_med") , file = "CTA Cox regression outputs/CTACompiledCOX_CTAData_nontrunc.xlsx", sheetName = "Helper subset (Tumor-sparse)", append = TRUE)
+
+write.xlsx(Cytotoxic_All_merged %>% relocate(Biomarkers, .before = "n_med") , file = "CTA Cox regression outputs/CTACompiledCOX_CTAData_nontrunc.xlsx", sheetName = "Cytotoxic (All samples)", append = TRUE)
+
+write.xlsx(Cytotoxic_TR_merged %>% relocate(Biomarkers, .before = "n_med"), file = "CTA Cox regression outputs/CTACompiledCOX_CTAData_nontrunc.xlsx", sheetName = "Cytotoxic (Tumor-rich)", append = TRUE)
+
+write.xlsx(Cytotoxic_TS_merged %>% relocate(Biomarkers, .before = "n_med") , file = "CTA Cox regression outputs/CTACompiledCOX_CTAData_nontrunc.xlsx", sheetName = "Cytotoxic (Tumor-sparse)", append = TRUE)
+```
+
+### CoxME file
+
+```{r}
+significance <- 0.05
+
+write.xlsx(Tumor_All_CM %>% dplyr::filter( Pvalue <= significance) %>% dplyr::filter( Pvalue_check > significance ) %>% dplyr::mutate(Prognosis = ifelse(HR > 1, "Negative", "Positive")) , file = "CTA Cox regression outputs/COXME_compiledCTA.xlsx", sheetName = "Tumor All samples", append = FALSE)
+
+write.xlsx(Helper_All_CM %>% dplyr::filter( Pvalue <= significance) %>% dplyr::filter( Pvalue_check > significance ) %>% dplyr::mutate(Prognosis = ifelse(HR > 1, "Negative", "Positive")) %>% distinct(), file = "CTA Cox regression outputs/COXME_compiledCTA.xlsx",  sheetName = "Helper subset (All samples)", append = TRUE)
+
+write.xlsx(Helper_TR_CM  %>% dplyr::filter( Pvalue <= significance) %>% dplyr::filter( Pvalue_check > significance ) %>% dplyr::mutate(Prognosis = ifelse(HR > 1, "Negative", "Positive")) %>% distinct(), file = "CTA Cox regression outputs/COXME_compiledCTA.xlsx",  sheetName = "Helper subset (Tumor-rich)", append = TRUE)
+
+write.xlsx(Helper_TS_CM  %>% dplyr::filter( Pvalue <= significance) %>% dplyr::filter( Pvalue_check > significance ) %>% dplyr::mutate(Prognosis = ifelse(HR > 1, "Negative", "Positive")) %>% distinct(), file = "CTA Cox regression outputs/COXME_compiledCTA.xlsx",  sheetName = "Helper subset (Tumor-sparse)", append = TRUE)
+
+write.xlsx(Cytotoxic_All_CM %>% dplyr::filter( Pvalue <= significance) %>% dplyr::filter( Pvalue_check > significance ) %>% dplyr::mutate(Prognosis = ifelse(HR > 1, "Negative", "Positive")), file = "CTA Cox regression outputs/COXME_compiledCTA.xlsx",  sheetName = "Cytotoxic (All samples)", append = TRUE)
+
+write.xlsx(Cytotoxic_TR_CM  %>% dplyr::filter( Pvalue <= significance) %>% dplyr::filter( Pvalue_check > significance ) %>% dplyr::mutate(Prognosis = ifelse(HR > 1, "Negative", "Positive")) , file = "CTA Cox regression outputs/COXME_compiledCTA.xlsx",  sheetName = "Cytotoxic (Tumor-rich)", append = TRUE)
+
+write.xlsx(Cytotoxic_TS_CM  %>% dplyr::filter( Pvalue <= significance) %>% dplyr::filter( Pvalue_check > significance ) %>% dplyr::mutate(Prognosis = ifelse(HR > 1, "Negative", "Positive")) %>% distinct(), file = "CTA Cox regression outputs/COXME_compiledCTA.xlsx",  sheetName = "Cytotoxic (Tumor-sparse)", append = TRUE)
+```
+
+### Truncted with strict condition that mean, median and CM are all significant
+
+```{r}
+library("xlsx")
+conflict_prefer("desc", "dplyr")
+significance <- 0.05
+
+write.xlsx(Tumor_All_merged %>% dplyr::filter(`P_mean`<=significance &`P_med`<=significance & `P_CM` <= significance) %>% dplyr::filter( `P_chk_CM`> significance & `P_chk_med`> significance & `P_chk_mean`> significance ) %>% dplyr::mutate(Prognosis = ifelse(HR_med > 1 & HR_mean>1 & HR_CM>1, "Negative", "Positive") ) %>% relocate("n_med", .after = "Biomarkers"), file = "CTA Cox regression outputs/CompliedCOX_STRICT_CTA.xlsx", sheetName = "Tumor All samples", append = FALSE)
+
+write.xlsx(Helper_All_merged  %>% dplyr::filter(`P_mean`<=significance &`P_med`<=significance & `P_CM` <= significance) %>% dplyr::filter( `P_chk_CM`> significance & `P_chk_med`> significance & `P_chk_mean`> significance ) %>% dplyr::mutate(Prognosis = ifelse(HR_med > 1 & HR_mean>1 & HR_CM>1, "Negative", "Positive") )%>% relocate("n_med", .after = "Biomarkers"), file = "CTA Cox regression outputs/CompliedCOX_STRICT_CTA.xlsx", sheetName = "Helper subset (All samples)", append = TRUE)
+
+write.xlsx(Helper_TR_merged  %>% dplyr::filter(`P_mean`<=significance &`P_med`<=significance & `P_CM` <= significance) %>% dplyr::filter( `P_chk_CM`> significance & `P_chk_med`> significance & `P_chk_mean`> significance ) %>% dplyr::mutate(Prognosis = ifelse(HR_med > 1 & HR_mean>1 & HR_CM>1, "Negative", "Positive") ) %>% relocate("n_med", .after = "Biomarkers"), file = "CTA Cox regression outputs/CompliedCOX_STRICT_CTA.xlsx", sheetName = "Helper subset (Tumor-rich)", append = TRUE)
+
+write.xlsx(Helper_TS_merged  %>% dplyr::filter(`P_mean`<=significance &`P_med`<=significance & `P_CM` <= significance) %>% dplyr::filter( `P_chk_CM`> significance & `P_chk_med`> significance & `P_chk_mean`> significance ) %>% dplyr::mutate(Prognosis = ifelse(HR_med > 1 & HR_mean>1 & HR_CM>1, "Negative", "Positive") ) %>% relocate("n_med", .after = "Biomarkers"), file = "CTA Cox regression outputs/CompliedCOX_STRICT_CTA.xlsx", sheetName = "Helper subset (Tumor-sparse)", append = TRUE)
+
+write.xlsx(Cytotoxic_All_merged  %>% dplyr::filter(`P_mean`<=significance &`P_med`<=significance & `P_CM` <= significance) %>% dplyr::filter( `P_chk_CM`> significance & `P_chk_med`> significance & `P_chk_mean`> significance ) %>% dplyr::mutate(Prognosis = ifelse(HR_med > 1 & HR_mean>1 & HR_CM>1, "Negative", "Positive") ) %>% relocate("n_med", .after = "Biomarkers"), file = "CTA Cox regression outputs/CompliedCOX_STRICT_CTA.xlsx", sheetName = "Cytotoxic (All samples)", append = TRUE)
+
+write.xlsx(Cytotoxic_TR_merged  %>% dplyr::filter(`P_mean`<=significance &`P_med`<=significance & `P_CM` <= significance) %>% dplyr::filter( `P_chk_CM`> significance & `P_chk_med`> significance & `P_chk_mean`> significance ) %>% dplyr::mutate(Prognosis = ifelse(HR_med > 1 & HR_mean>1 & HR_CM>1, "Negative", "Positive") ) %>% relocate("n_med", .after = "Biomarkers"), file = "CTA Cox regression outputs/CompliedCOX_STRICT_CTA.xlsx", sheetName = "Cytotoxic (Tumor-rich)", append = TRUE)
+
+# write.xlsx(Cytotoxic_TS_merged  %>% dplyr::filter(`P_mean`<=significance &`P_med`<=significance & `P_CM` <= significance) %>% dplyr::filter( `P_chk_CM`> significance & `P_chk_med`> significance & `P_chk_mean`> significance ) %>% dplyr::mutate(Prognosis = ifelse(HR_med > 1 & HR_mean>1 & HR_CM>1, "Negative", "Positive") ) , file = "CompliedCOX_STRICT_CTA.xlsx", sheetName = "CTA Cox regression outputs//Cytotoxic (Tumor-sparse).xlsx", append = TRUE)
+
+#Cytotoxic_TS_merged  %>% dplyr::filter(`P_mean`<=significance &`P_med`<=significance & `P_CM` <= significance)
+```
+
+# Results- 
+
+If not being tested for CoxME, conditon for filter that either of the 3 (mean, median and coxme model is significant)
+
+Before log rank filteration 
+Whole Data has 186 observations
+Tumor has 172 observations
+
+## All Data including region
+
+```{r}
+compiled_df <- rbind(Tumor_All_merged,  Cytotoxic_All_merged,Cytotoxic_TR_merged,  Cytotoxic_TS_merged,Helper_All_merged, Helper_TR_merged,Helper_TS_merged)
+
+compiled_df <- compiled_df %>% dplyr::filter(`P_mean`<=significance |`P_med`<=significance | `P_CM` <= significance) %>% dplyr::filter( `P_chk_CM`> significance | `P_chk_med`> significance | `P_chk_mean`> significance ) %>% dplyr::mutate(Prognosis = ifelse(HR_med > 1 & HR_mean>1 | HR_CM>1, "Negative", "Positive") ) %>% distinct()
+
+comparedf <- compiled_df %>%  select(Biomarkers, Dataset, Prognosis) %>% dcast(Biomarkers~Dataset) %>% as.data.frame() %>% replace(is.na(.), "n.s") 
+
+row.names(comparedf) <- comparedf$Biomarkers
+mycol <- colorRampPalette(brewer.pal(10, "Pastel2"))(3)
+
+
+pdf("Some Results images/WHoleDataCompare.pdf", width = 10, height = 40, onefile = T)
+H <- Heatmap(as.matrix(comparedf %>% select(-c(Biomarkers))), row_names_gp = gpar(fontsize = 3), cluster_rows = FALSE, column_names_gp = gpar(fontsize =10),column_names_rot = 0,  row_names_centered = FALSE, column_names_centered = FALSE,  show_heatmap_legend = TRUE, cluster_columns = FALSE, row_names_side = "left", row_labels = comparedf$Biomarkers, show_row_names = TRUE, col  = c("Positive" ='blue',"Negative" = '#ef3b2c', "n.s" = "#e0ecf4"), heatmap_legend_param = list(title = "" , direction = "horizontal"),  use_raster = TRUE,raster_resize = TRUE, raster_device = "png")
+draw(H, heatmap_legend_side = "right")
+dev.off()
+H
+```
+## All data based on coxme including region
+
+```{r, echo=F, fig.height=6, fig.width=10}
+#compiled_df <- rbind(WD_CTA_CM, Tumor_All_CM, Tumor_Pure_CM, Helper_TS_CM, Helper_A3_CM, Helper_All_CM, Helper_TR_CM, Helper_W3_CM, Cytotoxic_All_CM, Cytotoxic_A3_CM, Cytotoxic_TS_CM, Cytotoxic_M3_CM, Cytotoxic_TR_CM, Cytotoxic_W3_CM)
+
+compiled_df <- rbind(Tumor_All_CM, Cytotoxic_All_CM, Cytotoxic_TS_CM, Cytotoxic_TR_CM, Helper_TS_CM, Helper_All_CM, Helper_TR_CM)
+
+significance <- 0.05
+
+compiled_df <- compiled_df %>% dplyr::filter(Pvalue <= significance) %>% dplyr::filter(Pvalue_check > significance ) %>% dplyr::mutate(Prognosis = ifelse( HR>1, "Negative", "Positive") )
+
+
+comparedf <- compiled_df %>%  select(Biomarkers, Dataset, Prognosis) %>% dcast(Biomarkers~Dataset) %>% as.data.frame() %>% replace(is.na(.), "n.s") 
+
+comparedf <- compiled_df %>%  select(Biomarkers, Dataset, Pvalue) %>% dcast(Biomarkers~Dataset, value = "Pvalue") %>% as.data.frame() 
+
+write.csv(comparedf, file = "compared_COXME_filtered_ranked.csv", append = FALSE)
+
+comparedf <- comparedf %>% replace(is.na(.),0)
+
+row.names(comparedf) <- comparedf$Biomarkers
+mycol <- colorRampPalette(brewer.pal(10, "RdYlBu"))(10)
+
+df <- names(comparedf) %>% as.data.frame() %>% row_to_names(row_number = 1)
+df <-df %>% dplyr::mutate(Region = ifelse(grepl("Away", df$Biomarkers), "Tumor-depleted", ifelse(grepl("TR", df$Biomarkers), "Tumor-rich",  ifelse(grepl("All", df$Biomarkers), "Localization Undivided",  ifelse(grepl("Tumor (Pure)", df$Biomarkers), "Tumor-rich",  ifelse(grepl("Tumor", df$Biomarkers),  "Tumor-rich","Cell type undivided"))))), SegmentType = ifelse(grepl("Cytotoxic", df$Biomarkers), "Cytotoxic", ifelse(grepl("Helper", df$Biomarkers), "Helper",  ifelse(grepl("Tumor", df$Biomarkers), "Tumor", "Cell type undivided"))))
+
+column_ha = HeatmapAnnotation(CellType = df$SegmentType, Region = df$Region, col = list(CellType = c("Tumor"= "#fee391", "Bulk T cells"= "#d4b9da","Cell type undivided"= "navyblue", "Cytotoxic"="#41ae76","Helper"= "#e7298a"), Region = c("Tumor"= "#fee391", "Bulk T cells"="#d4b9da","Cell type undivided"= "navyblue", "Localization Undivided"="mistyrose", "Tumor-rich" = "#980043", "Tumor-depleted"="#fd8d3c")))
+
+Heatmap(as.matrix(comparedf %>% select(-c(Biomarkers))), row_names_gp = gpar(fontsize = 10),  column_names_gp = gpar(fontsize =5),  row_names_centered = FALSE, column_names_centered = FALSE,  show_heatmap_legend = TRUE,  row_names_side = "left", row_labels = comparedf$Biomarkers, show_row_names = TRUE, rect_gp = gpar(col = "white", lwd = 2), col  = mycol, heatmap_legend_param = list(title = "Significance"), top_annotation = column_ha, column_split = df$SegmentType,show_column_names = FALSE, column_title=NULL,row_title=NULL, column_gap  = unit(6, "mm"), border = TRUE)
+```
+
+## All data based on coxme - excluding region
+
+```{r, echo=F, fig.height=6, fig.width=10}
+compiled_df <- rbind( Tumor_All_CM, Helper_All_CM, Cytotoxic_All_CM)
+
+significance <- 0.05
+compiled_df <- compiled_df %>% dplyr::filter(Pvalue <= significance) %>% dplyr::filter(Pvalue_check > significance ) %>% dplyr::mutate(Prognosis = ifelse( HR>1, "Negative", "Positive") )
+comparedf <- compiled_df %>%  select(Biomarkers, Dataset, Prognosis) %>% dcast(Biomarkers~Dataset) %>% as.data.frame() %>% replace(is.na(.), "n.s") 
+
+row.names(comparedf) <- comparedf$Biomarkers
+mycol <- colorRampPalette(brewer.pal(10, "Pastel2"))(3)
+
+df <- names(comparedf) %>% as.data.frame() %>% row_to_names(row_number = 1) 
+df <-df %>% dplyr::mutate(Region = ifelse(grepl("Away", df$Biomarkers), "Tumor-depleted", ifelse(grepl("TR", df$Biomarkers), "Tumor-rich",  ifelse(grepl("All", df$Biomarkers), "Localization Undivided",  ifelse(grepl("Tumor (Pure)", df$Biomarkers), "Tumor-rich",  ifelse(grepl("Tumor", df$Biomarkers),  "Tumor-rich","Cell type undivided"))))), SegmentType = ifelse(grepl("Cytotoxic", df$Biomarkers), "Cytotoxic", ifelse(grepl("Helper", df$Biomarkers), "Helper",  ifelse(grepl("Tumor", df$Biomarkers), "Tumor", "Cell type undivided"))))
+                
+column_ha = HeatmapAnnotation(CellType = df$SegmentType, Region = df$Region, col = list(CellType = c("Tumor"= "#fee391", "Bulk T cells"= "#d4b9da","Cell type undivided"= "navyblue", "Cytotoxic"="#41ae76","Helper"= "#e7298a"), Region = c("Tumor"= "#fee391", "Bulk T cells"="#d4b9da","Cell type undivided"= "navyblue", "Localization Undivided"="mistyrose", "Tumor-rich" = "#980043", "Tumor-depleted"="#fd8d3c")))
+
+Heatmap(as.matrix(comparedf %>% select(-c(Biomarkers))), row_names_gp = gpar(fontsize =6),  column_names_gp = gpar(fontsize =10),  row_names_centered = FALSE, column_names_centered = FALSE,  show_heatmap_legend = TRUE,  row_names_side = "left", row_labels = comparedf$Biomarkers, show_row_names = TRUE, rect_gp = gpar(col = "white", lwd = 2), col  = c("Positive" ='blue',"Negative" = '#ef3b2c', "n.s" = "#e0ecf4"), heatmap_legend_param = list(title = "Significance"), top_annotation = column_ha, column_split = df$SegmentType,show_column_names = FALSE, column_title=NULL,row_title=NULL, column_gap  = unit(8, "mm"), border = TRUE)
+```
+
+### KM curves 
+
+```{r}
+CTA_cyto <- inner_join(newclinicaldata, CTA, by = "PATID") %>% dplyr::filter(SegmentLabelNew == "MTC")
+
+KMCatCurves(data = CTA_cyto, inputlist = c("H3C2"), filterCV = TRUE, PATID = "PATID",CVcutoff = 30, aggregationType = "median", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+
+<!-- ### Functional enrichment  -->
+
+<!-- ```{r} -->
+<!-- Listnames <- comparedf$Biomarkers %>% as.data.frame() -->
+
+<!-- mappedids <- readxl::read_xlsx("Datafiles/geneIDs.xlsx", sheet = "TargetProperties") %>% as.data.frame() -->
+<!-- mappedids <- subset(mappedids ,mappedids$TargetName %in% Listnames$.) %>%  arrange(desc(TargetName)) -->
+
+<!-- eg = bitr(mappedids$TargetName, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db") -->
+<!-- genelist <-unique(mappedids$GeneID) -->
+<!-- ``` -->
+
+<!-- #### MsigDB enrichment -->
+<!-- ```{r} -->
+<!-- m_t2g <- msigdbr(species = "Homo sapiens", category = "C5") %>% dplyr::select(gs_name, entrez_gene) -->
+<!-- ego1 <- enricher(genelist, TERM2GENE=m_t2g) -->
+<!-- ``` -->
+
+<!-- ##### Barplot -->
+<!-- ```{r} -->
+<!-- dplyr::mutate(ego1, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore") -->
+<!-- barplot(ego1) -->
+<!-- ``` -->
+
+<!-- ##### Dotplot -->
+<!-- ```{r} -->
+<!-- conflict_prefer("desc", "dplyr") -->
+<!-- dotplot(ego1, showCategory=10) -->
+<!-- ``` -->
+
+<!-- ##### Upsetplot -->
+<!-- ```{r,echo=FALSE, fig.height=4, fig.width=20} -->
+<!-- upsetplot(ego1) -->
+<!-- ``` -->
+
+<!-- ### CnetPlot -->
+<!-- ```{r, echo=FALSE, fig.height=9, fig.width=15} -->
+<!-- cnetplot(ego1, foldChange=genelist,circular = TRUE, colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- cnetplot(ego1, foldChange=genelist,colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- ``` -->
+
+<!-- #### Kegg enrichment -->
+
+<!-- ```{r} -->
+<!-- kk <- enrichKEGG(gene = eg$ENTREZID, -->
+<!-- organism = 'hsa', -->
+<!-- pvalueCutoff = 0.05) -->
+
+<!-- head(kk) -->
+
+<!-- listID <-  kk@result[["ID"]] %>% as.data.frame() %>% slice_head(n=10) -->
+
+<!-- for (i in listID$.) { -->
+<!--   pathview(gene.data  = genelist, -->
+<!--                    pathway.id = i,  -->
+<!--                      species    = "hsa",kegg.native = T) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ##### Barplot -->
+<!-- ```{r, echo=FALSE, fig.height=3, fig.width=5} -->
+<!-- dplyr::mutate(kk, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore") -->
+<!-- barplot(kk, showCategory = 20) -->
+<!-- ``` -->
+
+<!-- ##### Dotplot -->
+<!-- ```{r,echo=FALSE, fig.height=4, fig.width=6} -->
+<!-- dotplot(kk,  showCategory = 20) -->
+<!-- ``` -->
+
+<!-- ##### Upsetplot -->
+<!-- ```{r, echo=FALSE, fig.height=4, fig.width=6} -->
+<!-- upsetplot(kk) -->
+<!-- ``` -->
+
+<!-- ##### CnetPlot -->
+<!-- ```{r, fig.height=4, fig.width=6} -->
+<!-- cnetplot(kk, foldChange=genelist,colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- ``` -->
+
+<!-- #### Wikipathways enrichment -->
+<!-- ```{r} -->
+<!-- WP <- enrichWP(genelist, organism = "Homo sapiens")  -->
+<!-- ``` -->
+
+<!-- ##### Barplot -->
+<!-- ```{r, ,echo=FALSE, fig.height=3, fig.width=4} -->
+<!-- #dplyr::mutate(WP, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore", showCategory = 15) -->
+<!-- barplot(WP, showCategory = 15) -->
+<!-- ``` -->
+
+<!-- ##### Dotplot -->
+<!-- ```{r,fig.height=5, fig.width=3, echo=F} -->
+<!-- conflict_prefer("desc", "dplyr") -->
+<!-- dotplot(WP, showCategory=20) -->
+<!-- ``` -->
+
+<!-- ##### Upsetplot -->
+<!-- ```{r,echo=FALSE, fig.height=3, fig.width=12} -->
+<!-- #pdf("WP_upsetplot.pdf", width = 40, height = 20) -->
+<!-- upsetplot(WP) -->
+<!-- #dev.off() -->
+<!-- ``` -->
+
+<!-- ##### CnetPlot -->
+<!-- ```{r, ,echo=FALSE, fig.height=5, fig.width=12} -->
+<!-- cnetplot(WP, foldChange=genelist,circular = TRUE, colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 0.8) -->
+<!-- cnetplot(WP, foldChange=genelist, colorEdge = TRUE, showCategory = 20, node_label="category",  -->
+<!--         cex_label_category = 0.8) -->
+<!-- ``` -->
+
+
+##  All Data excluding region
+
+Not segmented with region
+
+```{r, echo=FALSE, fig.height=7, fig.width=3}
+
+compiled_df <- rbind(Tumor_All_merged %>% dplyr::mutate(Dataset = "Tumor All"),   Helper_All_merged %>% dplyr::mutate(Dataset = "Helper All"), Cytotoxic_All_merged %>% dplyr::mutate(Dataset = "Cytotoxic All"))
+
+compiled_df <- compiled_df %>% dplyr::filter(`P_mean`<=significance |`P_med`<=significance | `P_CM` <= significance) %>% dplyr::filter( `P_chk_CM`> significance | `P_chk_med`> significance | `P_chk_mean`> significance ) %>% dplyr::mutate(Prognosis = ifelse(HR_med > 1 & HR_mean>1 | HR_CM>1, "Negative", "Positive") ) %>% distinct()
+
+comparedf <- compiled_df %>%  select(Biomarkers, Dataset, Prognosis) %>% dcast(Biomarkers~Dataset) %>% as.data.frame() %>% replace(is.na(.), "n.s") 
+
+row.names(comparedf) <- comparedf$Biomarkers
+mycol <- colorRampPalette(brewer.pal(10, "Pastel2"))(3)
+
+
+# pdf("Result Images/WHoleDataVSTumor.pdf")
+Heatmap(as.matrix(comparedf %>% select(-c(Biomarkers))), row_names_gp = gpar(fontsize = 3), cluster_rows = FALSE, column_names_gp = gpar(fontsize =10),column_names_rot = 0,  row_names_centered = FALSE, column_names_centered = FALSE,  show_heatmap_legend = TRUE, cluster_columns = FALSE, row_names_side = "left", row_labels = comparedf$Biomarkers, show_row_names = TRUE, col  = c("Positive" ='blue',"Negative" = '#ef3b2c', "n.s" = "#e0ecf4"), heatmap_legend_param = list(title = "" , direction = "horizontal"),  use_raster = TRUE,
+raster_resize = TRUE, raster_device = "png")
+# draw(H, heatmap_legend_side = "right")
+# dev.off()
+# H
+```
+<!-- ### Functional enrichment  -->
+
+<!-- ```{r} -->
+<!-- Listnames <- comparedf$Biomarkers %>% as.data.frame() -->
+
+<!-- mappedids <- readxl::read_xlsx("Datafiles/geneIDs.xlsx", sheet = "TargetProperties") %>% as.data.frame() -->
+<!-- mappedids <- subset(mappedids ,mappedids$TargetName %in% Listnames$.) %>%  arrange(desc(TargetName)) -->
+
+<!-- eg = bitr(mappedids$TargetName, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db") -->
+<!-- genelist <-unique(mappedids$GeneID) -->
+<!-- ``` -->
+
+<!-- #### MsigDB enrichment -->
+<!-- ```{r} -->
+<!-- m_t2g <- msigdbr(species = "Homo sapiens", category = "C5") %>% dplyr::select(gs_name, entrez_gene) -->
+<!-- ego1 <- enricher(genelist, TERM2GENE=m_t2g) -->
+<!-- ``` -->
+
+<!-- ##### Barplot -->
+<!-- ```{r} -->
+<!-- dplyr::mutate(ego1, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore") -->
+<!-- barplot(ego1) -->
+<!-- ``` -->
+
+<!-- ##### Dotplot -->
+<!-- ```{r} -->
+<!-- conflict_prefer("desc", "dplyr") -->
+<!-- dotplot(ego1, showCategory=10) -->
+<!-- ``` -->
+
+<!-- ##### Upsetplot -->
+<!-- ```{r,echo=FALSE, fig.height=4, fig.width=10} -->
+<!-- upsetplot(ego1) -->
+<!-- ``` -->
+
+<!-- ### CnetPlot -->
+<!-- ```{r, echo=FALSE, fig.height=9, fig.width=15} -->
+<!-- cnetplot(ego1, foldChange=genelist,circular = TRUE, colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- cnetplot(ego1, foldChange=genelist,colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- ``` -->
+
+<!-- #### Kegg enrichment -->
+
+<!-- ```{r} -->
+<!-- kk <- enrichKEGG(gene = eg$ENTREZID, -->
+<!-- organism = 'hsa', -->
+<!-- pvalueCutoff = 0.05) -->
+
+<!-- head(kk) -->
+
+<!-- listID <-  kk@result[["ID"]] %>% as.data.frame() %>% slice_head(n=10) -->
+
+<!-- for (i in listID$.) { -->
+<!--   pathview(gene.data  = genelist, -->
+<!--                    pathway.id = i,  -->
+<!--                      species    = "hsa",kegg.native = T) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ##### Barplot -->
+<!-- ```{r, echo=FALSE, fig.height=3, fig.width=5} -->
+<!-- dplyr::mutate(kk, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore") -->
+<!-- barplot(kk, showCategory = 20) -->
+<!-- ``` -->
+
+<!-- ##### Dotplot -->
+<!-- ```{r,echo=FALSE, fig.height=4, fig.width=6} -->
+<!-- dotplot(kk,  showCategory = 20) -->
+<!-- ``` -->
+
+<!-- ##### Upsetplot -->
+<!-- ```{r, echo=FALSE, fig.height=4, fig.width=6} -->
+<!-- upsetplot(kk) -->
+<!-- ``` -->
+
+<!-- ##### CnetPlot -->
+<!-- ```{r, fig.height=4, fig.width=6} -->
+<!-- cnetplot(kk, foldChange=genelist,colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- ``` -->
+
+<!-- #### Wikipathways enrichment -->
+<!-- ```{r} -->
+<!-- WP <- enrichWP(genelist, organism = "Homo sapiens")  -->
+<!-- ``` -->
+
+<!-- ##### Barplot -->
+<!-- ```{r, ,echo=FALSE, fig.height=3, fig.width=4} -->
+<!-- dplyr::mutate(WP, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore", showCategory = 15) -->
+<!-- barplot(WP, showCategory = 15) -->
+<!-- ``` -->
+
+<!-- ##### Dotplot -->
+<!-- ```{r,fig.height=5, fig.width=3, echo=F} -->
+<!-- conflict_prefer("desc", "dplyr") -->
+<!-- dotplot(WP, showCategory=20) -->
+<!-- ``` -->
+
+<!-- ##### Upsetplot -->
+<!-- ```{r,echo=FALSE, fig.height=3, fig.width=12} -->
+<!-- #pdf("WP_upsetplot.pdf", width = 40, height = 20) -->
+<!-- upsetplot(WP) -->
+<!-- #dev.off() -->
+<!-- ``` -->
+
+<!-- ##### CnetPlot -->
+<!-- ```{r, ,echo=FALSE, fig.height=5, fig.width=12} -->
+<!-- cnetplot(WP, foldChange=genelist,circular = TRUE, colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 0.8) -->
+<!-- cnetplot(WP, foldChange=genelist, colorEdge = TRUE, showCategory = 20, node_label="category",  -->
+<!--         cex_label_category = 0.8) -->
+<!-- ``` -->
+
+
+## All Data excluding region - Only the ones always enriched in TvsCvsH
+
+```{r, echo=FALSE, fig.height=1, fig.width=6}
+
+comparedf <- compiled_df %>%  select(Biomarkers, Dataset, Prognosis) %>% dcast(Biomarkers~Dataset) %>% as.data.frame() %>% replace(is.na(.), NA) 
+comparedf <-comparedf[complete.cases(comparedf),]
+row.names(comparedf) <- comparedf$Biomarkers
+mycol <- colorRampPalette(brewer.pal(10, "Pastel2"))(3)
+
+#pdf("Result Images/WHoleDataVSTumor.pdf")
+Heatmap(as.matrix(comparedf %>% select(-c(Biomarkers))), row_names_gp = gpar(fontsize = 10), cluster_rows = FALSE, column_names_gp = gpar(fontsize =10),column_names_rot = 0,  row_names_centered = FALSE, column_names_centered = FALSE,  show_heatmap_legend = TRUE, cluster_columns = FALSE, row_names_side = "left", row_labels = comparedf$Biomarkers, show_row_names = TRUE, col  = c("Positive" ='blue',"Negative" = '#ef3b2c', "n.s" = "#e0ecf4"), heatmap_legend_param = list(title = "" , direction = "horizontal"),  use_raster = TRUE,
+  raster_resize = TRUE, raster_device = "png")
+
+#
+```
+<!-- ### Functional enrichment  -->
+
+<!-- ```{r} -->
+<!-- Listnames <- comparedf$Biomarkers %>% as.data.frame() -->
+
+<!-- mappedids <- readxl::read_xlsx("Datafiles/geneIDs.xlsx", sheet = "TargetProperties") %>% as.data.frame() -->
+<!-- mappedids <- subset(mappedids ,mappedids$TargetName %in% Listnames$.) %>%  arrange(desc(TargetName)) -->
+
+<!-- eg = bitr(mappedids$TargetName, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db") -->
+<!-- genelist <-mappedids$GeneID -->
+<!-- ``` -->
+
+<!-- #### MsigDB enrichment -->
+<!-- ```{r} -->
+<!-- m_t2g <- msigdbr(species = "Homo sapiens", category = "C5") %>% dplyr::select(gs_name, entrez_gene) -->
+<!-- ego1 <- enricher(genelist, TERM2GENE=m_t2g) -->
+<!-- ``` -->
+
+<!-- ##### Barplot -->
+<!-- ```{r} -->
+<!-- dplyr::mutate(ego1, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore") -->
+<!-- barplot(ego1) -->
+<!-- ``` -->
+
+<!-- ##### Dotplot -->
+<!-- ```{r} -->
+<!-- conflict_prefer("desc", "dplyr") -->
+<!-- dotplot(ego1, showCategory=10) -->
+<!-- ``` -->
+
+<!-- ##### Upsetplot -->
+<!-- ```{r,echo=FALSE, fig.height=4, fig.width=10} -->
+<!-- upsetplot(ego1) -->
+<!-- ``` -->
+
+<!-- ### CnetPlot -->
+<!-- ```{r, echo=FALSE, fig.height=9, fig.width=15} -->
+<!-- cnetplot(ego1, foldChange=genelist,circular = TRUE, colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- cnetplot(ego1, foldChange=genelist,colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- ``` -->
+
+<!-- #### Kegg enrichment -->
+
+<!-- ```{r} -->
+<!-- kk <- enrichKEGG(gene = eg$ENTREZID, -->
+<!-- organism = 'hsa', -->
+<!-- pvalueCutoff = 0.05) -->
+
+<!-- head(kk) -->
+
+<!-- listID <-  kk@result[["ID"]] %>% as.data.frame() %>% slice_head(n=10) -->
+
+<!-- for (i in listID$.) { -->
+<!--   pathview(gene.data  = genelist, -->
+<!--                    pathway.id = i,  -->
+<!--                      species    = "hsa",kegg.native = T) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ##### Barplot -->
+<!-- ```{r, echo=FALSE, fig.height=3, fig.width=5} -->
+<!-- dplyr::mutate(kk, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore") -->
+<!-- barplot(kk, showCategory = 20) -->
+<!-- ``` -->
+
+<!-- ##### Dotplot -->
+<!-- ```{r,echo=FALSE, fig.height=4, fig.width=6} -->
+<!-- dotplot(kk,  showCategory = 20) -->
+<!-- ``` -->
+
+<!-- ##### Upsetplot -->
+<!-- ```{r, echo=FALSE, fig.height=4, fig.width=6} -->
+<!-- upsetplot(kk) -->
+<!-- ``` -->
+
+<!-- ##### CnetPlot -->
+<!-- ```{r, fig.height=4, fig.width=6} -->
+<!-- cnetplot(kk, foldChange=genelist,colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- ``` -->
+
+<!-- #### Wikipathways enrichment -->
+<!-- ```{r} -->
+<!-- WP <- enrichWP(genelist, organism = "Homo sapiens")  -->
+<!-- ``` -->
+
+<!-- ##### Barplot -->
+<!-- ```{r, ,echo=FALSE, fig.height=3, fig.width=4} -->
+<!-- dplyr::mutate(WP, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore", showCategory = 15) -->
+<!-- barplot(WP, showCategory = 15) -->
+<!-- ``` -->
+
+<!-- ##### Dotplot -->
+<!-- ```{r,fig.height=5, fig.width=3, echo=F} -->
+<!-- conflict_prefer("desc", "dplyr") -->
+<!-- dotplot(WP, showCategory=20) -->
+<!-- ``` -->
+
+<!-- ##### Upsetplot -->
+<!-- ```{r,echo=FALSE, fig.height=3, fig.width=12} -->
+<!-- #pdf("WP_upsetplot.pdf", width = 40, height = 20) -->
+<!-- upsetplot(WP) -->
+<!-- #dev.off() -->
+<!-- ``` -->
+
+<!-- ##### CnetPlot -->
+<!-- ```{r, ,echo=FALSE, fig.height=5, fig.width=12} -->
+<!-- cnetplot(WP, foldChange=genelist,circular = TRUE, colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 0.8) -->
+<!-- cnetplot(WP, foldChange=genelist, colorEdge = TRUE, showCategory = 20, node_label="category",  -->
+<!--         cex_label_category = 0.8) -->
+<!-- ``` -->
+
+<!-- #### Reactome enrichment -->
+
+<!-- ```{r} -->
+<!-- x <- enrichPathway(gene=genelist, pvalueCutoff = 0.05, readable=TRUE) -->
+<!-- ``` -->
+
+<!-- ##### Barplot -->
+<!-- ```{r, ,echo=FALSE, fig.height=3, fig.width=4} -->
+<!-- dplyr::mutate(x, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore", showCategory = 15) -->
+<!-- barplot(x, showCategory = 15) -->
+<!-- ``` -->
+
+<!-- ##### Dotplot -->
+<!-- ```{r,fig.height=5, fig.width=3, echo=F} -->
+<!-- conflict_prefer("desc", "dplyr") -->
+<!-- dotplot(x, showCategory=20) -->
+<!-- ``` -->
+
+<!-- ##### Upsetplot -->
+<!-- ```{r,echo=FALSE, fig.height=3, fig.width=12} -->
+<!-- #pdf("WP_upsetplot.pdf", width = 40, height = 20) -->
+<!-- upsetplot(x) -->
+<!-- #dev.off() -->
+<!-- ``` -->
+
+<!-- ##### CnetPlot -->
+<!-- ```{r, ,echo=FALSE, fig.height=5, fig.width=12} -->
+<!-- cnetplot(x, foldChange=genelist,circular = TRUE, colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 0.8) -->
+<!-- cnetplot(x, foldChange=genelist, colorEdge = TRUE, showCategory = 20, node_label="category",  -->
+<!--         cex_label_category = 0.8) -->
+<!-- ``` -->
+
+
+
+```{r}
+inputlist <- comparedf$Biomarkers
+
+KMCatCurves(data = CTA_cyto %>% filter( Within.the.tumor=="Tumor-rich"), inputlist = inputlist, filter = FALSE, filterCV = TRUE, PATID = "PATID", CVcutoff = 30, aggregationType = "median", minprop = 0.1, SurvCutoff = TRUE,  OS ="OS", OS.01="OS.01")
+
+KMCatCurves(data = CTA_helper%>% filter( Within.the.tumor=="Tumor-rich"), inputlist = inputlist, filter = FALSE, filterCV = TRUE, PATID = "PATID", CVcutoff = 30, aggregationType = "median", minprop = 0.1, SurvCutoff = TRUE,  OS ="OS", OS.01="OS.01")
+
+KMCatCurves(data = CTA_tumor, inputlist = inputlist, filter = FALSE, filterCV = TRUE, PATID = "PATID", CVcutoff = 30, aggregationType = "median", minprop = 0.1, SurvCutoff = TRUE,  OS ="OS", OS.01="OS.01")
+```
+
+# Logrank Filtration
+
+```{r}
+significance <- 0.05
+shortlist0 <- Tumor_All_mean %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check) %>%  dplyr::filter(Pvalue_check> significance & Pvalue<=significance)
+shortlist1 <- Tumor_All_Median %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)%>%  dplyr::filter(Pvalue_check> significance & Pvalue<=significance)
+shortlist2 <- Tumor_All_CM %>% select(n, Biomarkers, HR, Pvalue, Pvalue_check)%>%  dplyr::filter(Pvalue_check> significance & Pvalue<=significance)
+
+BiomarkerList <- rbind(shortlist0, shortlist1, shortlist2) %>% select(Biomarkers) %>% distinct()
+Tumor_logrank <- logrankFilter(CTA_tumor, BiomarkerList$Biomarkers, filterCV = FALSE, PATID, CVcutoff = 30, aggregationType = "median", SurvCutoff = TRUE, minprop = 0.1)
+
+Tumor_logrank %>% filter(as.numeric(Survcutoff)<=0.05) %>% arrange(Survcutoff)
+```
+
+# Other
+```{r}
+# CVcutoff <-10
+# marker <- "FOXP3"
+# data_EC <-   CTA %>% filter(SegmentLabel=="Early Cytotoxic")
+# 
+# cvlist <- filterCV(data= data_EC,  PATID = "PATID", names=paste0(marker))
+# cvlist <- cvlist %>%  dplyr::filter(CV <= CVcutoff)
+# data_EC <- subset(data_EC, data_EC$PATID %in% cvlist$PATID) %>% as.data.frame()
+# 
+# data_ENC <-   CTA %>% filter(SegmentLabel=="Early Non-Cytotoxic")
+# cvlist <- filterCV(data= data_ENC,  PATID = "PATID", names=marker)
+# cvlist <- cvlist %>%  dplyr::filter(CV <= CVcutoff)
+# data_ENC <- subset(data_ENC, data_ENC$PATID %in% cvlist$PATID) %>% as.data.frame()
+# 
+# data_LC <-   CTA %>% filter(SegmentLabel=="Late Cytotoxic")
+# cvlist <- filterCV(data= data_LC,  PATID = "PATID", names=marker)
+# cvlist <- cvlist %>%  dplyr::filter(CV <= CVcutoff)
+# data_LC <- subset(data_LC, data_LC$PATID %in% cvlist$PATID) %>% as.data.frame()
+# 
+# data_LNC <-   CTA %>% filter(SegmentLabel=="Late Non-Cytotoxic")
+# cvlist <- filterCV(data= data_LNC,  PATID = "PATID", names=marker)
+# cvlist <- cvlist %>%  dplyr::filter(CV <= CVcutoff)
+# data_LNC <- subset(data_LNC, data_LNC$PATID %in% cvlist$PATID) %>% as.data.frame()
+# 
+# CVfiltereddf <-  rbind(data_EC, data_ENC, data_LC, data_LNC)
+# 
+# my_comparisons <- list( c("Early Cytotoxic", "Early Non-Cytotoxic"), c("Early Cytotoxic", "Late Cytotoxic"), c("Early Cytotoxic", "Late Non-Cytotoxic") )
+# 
+# CTA %>% ggplot(aes(x=SegmentLabel, y=FOXP3, fill = SegmentLabel)) +
+#   geom_violin(alpha = 0.6) +
+#   geom_jitter(width=0.2, height=0.1, alpha = 0.2, size = 2) +
+#   stat_compare_means(comparisons = my_comparisons)+ # Add pairwise comparisons p-value
+#   stat_compare_means(label.y = 9)  +   # Add global p-value
+#   theme(axis.ticks.x = element_line(size = 0.1),axis.title.y = element_text(size = 12),panel.background = element_rect(fill = "white"),panel.border = element_rect(fill = NA), legend.position = "none", legend.title = element_blank(), legend.text = element_text(size = 10)) 
+```

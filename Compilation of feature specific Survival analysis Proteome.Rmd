@@ -1,0 +1,549 @@
+---
+title: "Compilation of feature specific survival analysis-Proteome"
+author: "Lavanya"
+date: "11/29/2021"
+output:
+  BiocStyle::html_document:
+    toc_float: true
+vignette: >
+  %\VignetteIndexEntry{Compilation of feature specific survival analysis-Proteome}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Calling for packages 
+
+```{r}
+packagelist <- c("reshape2", "ggrepel", "ggplot2","dplyr","tidyverse", "formattable","ComplexHeatmap", "pheatmap", "readxl","RColorBrewer","survminer", "survival", "patchwork", "coxme", "conflicted","kableExtra","wesanderson","broom", "gridExtra", "forestplot", "writexl", "GetoptLong","corrplot", "rstatix", "janitor", "org.Hs.eg.db", "clusterProfiler", "msigdbr", "DOSE", "enrichplot", "pathviewr" )
+
+for (i in packagelist){
+ suppressPackageStartupMessages(library(i, character.only = TRUE))
+}
+
+source("Uni_multi_coxme_Aug2022.r")
+
+
+conflict_prefer("filter", "dplyr")
+conflict_prefer("select", "dplyr")
+conflicts_prefer(clusterProfiler::rename)
+```
+a
+# IMPORTANT LINKS - 
+
+https://stats.stackexchange.com/questions/411689/cox-regression-different-results-with-different-combinations-of-variables/411817#411817
+https://stats.stackexchange.com/questions/68834/what-is-the-benefit-of-breaking-up-a-continuous-predictor-variable https://stats.stackexchange.com/questions/411804/how-to-choose-the-best-combination-of-covariates-in-cox-multiple-regression
+https://stackoverflow.com/questions/69780549/convert-cox-regression-table-to-forest-plot
+
+# Calling for Protein survival output files
+
+```{r}
+inputname <- list("Protein Cox regression outputs/Early Cytotoxic All_A-Mean.csv",                                                 
+                  "Protein Cox regression outputs/Early Cytotoxic All_A-Median.csv" ,                                                   
+                  "Protein Cox regression outputs/Early Cytotoxic All_coxME.csv"  ,         
+                   "Protein Cox regression outputs/Early Cytotoxic All_fullMergedTable.csv"   ,          
+                  
+                  "Protein Cox regression outputs/Early Cytotoxic Away_A-Mean.csv"   ,                                                      
+                  "Protein Cox regression outputs/Early Cytotoxic Away_A-Median.csv",                                                     
+                   "Protein Cox regression outputs/Early Cytotoxic Away_coxME.csv"    ,                                                      
+                    "Protein Cox regression outputs/Early Cytotoxic Away_fullMergedTable.csv"      ,   
+                  
+                  "Protein Cox regression outputs/Early Cytotoxic Within_A-Mean.csv"   ,                    
+                    "Protein Cox regression outputs/Early Cytotoxic Within_A-Median.csv"    ,               
+                  "Protein Cox regression outputs/Early Cytotoxic Within_coxME.csv"      ,                  
+                  "Protein Cox regression outputs/Early Cytotoxic Within_fullMergedTable.csv"   ,
+                  
+                  "Protein Cox regression outputs/Early Helper All_A-Mean.csv",                                                 
+                  "Protein Cox regression outputs/Early Helper All_A-Median.csv" ,                                                   
+                  "Protein Cox regression outputs/Early Helper All_coxME.csv"  ,         
+                   "Protein Cox regression outputs/Early Helper All_fullMergedTable.csv"   ,          
+                  
+                  "Protein Cox regression outputs/Early Helper Away_A-Mean.csv"   ,                                                      
+                  "Protein Cox regression outputs/Early Helper Away_A-Median.csv",                                                     
+                   "Protein Cox regression outputs/Early Helper Away_coxME.csv"    ,                                                      
+                    "Protein Cox regression outputs/Early Helper Away_fullMergedTable.csv"      ,   
+                  
+                  "Protein Cox regression outputs/Early Helper Within_A-Mean.csv"   ,                    
+                    "Protein Cox regression outputs/Early Helper Within_A-Median.csv"    ,               
+                  "Protein Cox regression outputs/Early Helper Within_coxME.csv"      ,                  
+                  "Protein Cox regression outputs/Early Helper Within_fullMergedTable.csv"   ,
+                  
+                  "Protein Cox regression outputs/Late Cytotoxic All_A-Mean.csv",                                                 
+                  "Protein Cox regression outputs/Late Cytotoxic All_A-Median.csv" ,                                                   
+                  "Protein Cox regression outputs/Late Cytotoxic All_coxME.csv"  ,         
+                   "Protein Cox regression outputs/Late Cytotoxic All_fullMergedTable.csv"   ,          
+                  
+                  "Protein Cox regression outputs/Late Cytotoxic Away_A-Mean.csv"   ,                                                      
+                  "Protein Cox regression outputs/Late Cytotoxic Away_A-Median.csv",                                                     
+                   "Protein Cox regression outputs/Late Cytotoxic Away_coxME.csv"    ,                                                      
+                    "Protein Cox regression outputs/Late Cytotoxic Away_fullMergedTable.csv"      ,   
+                  
+                  "Protein Cox regression outputs/Late Cytotoxic Within_A-Mean.csv"   ,                    
+                    "Protein Cox regression outputs/Late Cytotoxic Within_A-Median.csv"    ,               
+                  "Protein Cox regression outputs/Late Cytotoxic Within_coxME.csv"      ,                  
+                  "Protein Cox regression outputs/Late Cytotoxic Within_fullMergedTable.csv"   ,
+                  
+                    "Protein Cox regression outputs/Late Helper All_A-Mean.csv",                                                 
+                  "Protein Cox regression outputs/Late Helper All_A-Median.csv" ,                                                   
+                  "Protein Cox regression outputs/Late Helper All_coxME.csv"  ,         
+                   "Protein Cox regression outputs/Late Helper All_fullMergedTable.csv"   ,          
+                 
+                  "Protein Cox regression outputs/Late Helper Within_A-Mean.csv"   ,                    
+                    "Protein Cox regression outputs/Late Helper Within_A-Median.csv"    ,               
+                  "Protein Cox regression outputs/Late Helper Within_coxME.csv"      ,                  
+                  "Protein Cox regression outputs/Late Helper Within_fullMergedTable.csv" , 
+                  
+                  "Protein Cox regression outputs/Whole data_A-Mean.csv", 
+                  "Protein Cox regression outputs/Whole data_A-Median.csv", 
+                  "Protein Cox regression outputs/Whole data_coxME.csv",
+                  "Protein Cox regression outputs/Whole data_fullMergedTable.csv", 
+                  
+                  "Protein Cox regression outputs/CD3 Bulk_A-Mean.csv",
+                  "Protein Cox regression outputs/CD3 Bulk_A-Median.csv", 
+                  "Protein Cox regression outputs/CD3 Bulk_coxME.csv", 
+                  "Protein Cox regression outputs/CD3 Bulk_fullMergedTable.csv",
+                  
+                   "Protein Cox regression outputs/Tumor_A-Mean.csv",
+                  "Protein Cox regression outputs/Tumor_A-Median.csv", 
+                  "Protein Cox regression outputs/Tumor_coxME.csv", 
+                  "Protein Cox regression outputs/Tumor_fullMergedTable.csv"
+                  )
+                 
+
+outputname <- list( "EC_All_mean", "EC_All_Median", "EC_All_CM", "EC_All_merged",
+                    "EC_Away_mean", "EC_Away_Median", "EC_Away_CM", "EC_Away_merged",
+                    "EC_Within_mean", "EC_Within_Median", "EC_Within_CM", "EC_Within_merged",
+                    
+                    "ENC_All_mean", "ENC_All_Median", "ENC_All_CM", "ENC_All_merged",
+                    "ENC_Away_mean", "ENC_Away_Median", "ENC_Away_CM", "ENC_Away_merged",
+                    "ENC_Within_mean", "ENC_Within_Median", "ENC_Within_CM", "ENC_Within_merged",
+                    
+                    "LC_All_mean", "LC_All_Median", "LC_All_CM", "LC_All_merged",
+                    "LC_Away_mean", "LC_Away_Median", "LC_Away_CM", "LC_Away_merged",
+                    "LC_Within_mean", "LC_Within_Median", "LC_Within_CM", "LC_Within_merged",
+                    
+                    "LNC_All_mean", "LNC_All_Median", "LNC_All_CM", "LNC_All_merged",
+                 
+                    "LNC_Within_mean", "LNC_Within_Median", "LNC_Within_CM", "LNC_Within_merged", 
+                    
+                     "WD_mean", "WD_Median", "WD_CM", "WD_merged", 
+                    "CD3_mean", "CD3_Median", "CD3_CM", "CD3_merged", 
+                    "Tumor_mean", "Tumor_Median", "Tumor_CM", "Tumor_merged"
+                   )
+
+datasetname <- list( "EC_All_mean", "EC_All_Median", "EC_All_CM", "EC_All_merged",
+                    "EC_Away_mean", "EC_Away_Median", "EC_Away_CM", "EC_Away_merged",
+                    "EC_Within_mean", "EC_Within_Median", "EC_Within_CM", "EC_Within_merged",
+                    
+                    "ENC_All_mean", "ENC_All_Median", "ENC_All_CM", "ENC_All_merged",
+                    "ENC_Away_mean", "ENC_Away_Median", "ENC_Away_CM", "ENC_Away_merged",
+                    "ENC_Within_mean", "ENC_Within_Median", "ENC_Within_CM", "ENC_Within_merged",
+                    
+                    "LC_All_mean", "LC_All_Median", "LC_All_CM", "LC_All_merged",
+                    "LC_Away_mean", "LC_Away_Median", "LC_Away_CM", "LC_Away_merged",
+                    "LC_Within_mean", "LC_Within_Median", "LC_Within_CM", "LC_Within_merged",
+                    
+                    "LNC_All_mean", "LNC_All_Median", "LNC_All_CM", "LNC_All_merged",
+                    
+                    "LNC_Within_mean", "LNC_Within_Median", "LNC_Within_CM", "LNC_Within_merged", 
+                    "WD_mean", "WD_Median", "WD_CM", "WD_merged", 
+                    "CD3_mean", "CD3_Median", "CD3_CM", "CD3_merged",
+                    "Tumor_mean", "Tumor_Median", "Tumor_CM", "Tumor_merged"
+                   )
+
+datasetname2 <- list( "EC All", "EC All", "EC All", "EC All",
+                    "EC Away", "EC Away", "EC Away", "EC Away",
+                    "EC Within", "EC Within", "EC Within", "EC Within",
+                    
+                     "ENC All", "ENC All", "ENC All", "ENC All",
+                    "ENC Away", "ENC Away", "ENC Away", "ENC Away",
+                    "ENC Within", "ENC Within", "ENC Within", "ENC Within",
+                    
+                    "LC All", "LC All", "LC All", "LC All",
+                    "LC Away", "LC Away", "LC Away", "LC Away",
+                    "LC Within", "LC Within", "LC Within", "LC Within",
+                    
+                    "LNC All", "LNC All", "LNC All", "LNC All",
+                    
+                    "LNC Within", "LNC Within", "LNC Within", "LNC Within", 
+                    
+                    "Whole Data", "Whole Data", "Whole Data", "Whole Data", 
+                    "Bulk CD3", "Bulk CD3", "Bulk CD3", "Bulk CD3", 
+                    "Tumor","Tumor","Tumor","Tumor"
+                   )
+
+celltype <- list("EC", "EC","EC","EC",
+                 "EC", "EC","EC","EC",
+                 "EC", "EC","EC","EC",
+                 
+                  "ENC", "ENC", "ENC", "ENC",
+                  "ENC", "ENC", "ENC", "ENC",
+                  "ENC", "ENC", "ENC", "ENC",
+                 
+                  "LC",  "LC",  "LC",  "LC", 
+                 "LC",  "LC",  "LC",  "LC", 
+                 "LC",  "LC",  "LC",  "LC", 
+                 
+                 "LNC", "LNC", "LNC", "LNC",
+                 
+                  "LNC", "LNC", "LNC", "LNC",
+                 "WD", "WD", "WD", "WD", 
+                 "Bulk", "Bulk", "Bulk", "Bulk",
+                 "Tumor","Tumor","Tumor","Tumor"
+                 )
+
+type <- list("Mean", "Median","CM","Merged",
+                "Mean", "Median","CM","Merged",
+                 "Mean", "Median","CM","Merged",
+                 
+                 "Mean", "Median","CM","Merged",
+                  "Mean", "Median","CM","Merged",
+                  "Mean", "Median","CM","Merged",
+                 
+                "Mean", "Median","CM","Merged",
+                "Mean", "Median","CM","Merged",
+                "Mean", "Median","CM","Merged",
+                 
+                 "Mean", "Median","CM","Merged",
+                 
+                 "Mean", "Median","CM","Merged",
+                 "Mean", "Median","CM","Merged",
+                 "Mean", "Median","CM","Merged",
+               "Mean", "Median","CM","Merged"
+                 )
+
+
+
+for (i in 1:length(inputname)) {
+  dataset <-  read.csv(paste0(inputname[[i]])) %>% as.data.frame() %>% dplyr::mutate(Dataset = paste0(datasetname2[[i]]), Celltype = paste0(celltype[[i]]),ModelType = paste0(type[[i]]), name = paste0(datasetname[[i]])) 
+  assign(outputname[[i]], dataset, .GlobalEnv)
+}
+```
+
+# Clinical data updated November 2022
+
+```{r} 
+newclinicaldata <- read_excel("Datafiles/BLISS DATABASE NOVEMBER 2022 - NBIS.xlsx") %>% as.data.frame()
+```
+
+# Protein Expression file
+
+```{r}
+Proteome <- readxl::read_xlsx("Datafiles/Project2_Protein_all immune subtypes_Sep2023.xlsx") %>% 
+  as.data.frame()  %>% 
+  rename( "Within.the.tumor"="Within.the.tumor_June2023") %>%  
+  dplyr::filter(Within.the.tumor !="Exclude") 
+
+ProteomewithOS <- inner_join(newclinicaldata, Proteome, by = "PATID")
+  
+ProteomewithOS$OS <- as.numeric(as.character(ProteomewithOS$OS))
+ProteomewithOS$OS.01 <- as.numeric(as.character(ProteomewithOS$OS.01))
+
+np <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS)
+s <- e-np+1
+
+Proteome %>% select(PATID) %>% distinct()
+```
+
+# Merged Heatmap
+
+Note that in cancer studies:
+
+A covariate with hazard ratio > 1 (i.e.: b > 0) is called bad prognostic factor
+A covariate with hazard ratio < 1 (i.e.: b < 0) is called good prognostic factor
+
+```{r}
+compiled_df <- rbind(Tumor_merged, WD_merged, CD3_merged, EC_All_merged, EC_Away_merged, EC_Within_merged, ENC_All_merged, ENC_Away_merged, ENC_Within_merged, LC_All_merged, LC_Away_merged, LC_Within_merged, LNC_All_merged, LNC_Within_merged)
+
+significance <- 0.05
+compiled_df <- compiled_df %>% dplyr::filter(`P_mean`<=significance |`P_med`<=significance | `P_CM` <= significance) %>% dplyr::filter(`P_chk_PH`> significance | `P_chk_CM`> significance | `P_chk_med`> significance | `P_chk_mean`> significance ) %>% dplyr::mutate(Prognosis = ifelse(HR_med > 1 & HR_mean>1 | HR_CM>1, "HR>1", "HR<1") )
+
+
+comparedf <- compiled_df %>%  select(X, Dataset, Prognosis) %>% dcast(X~Dataset) %>% as.data.frame() %>% replace(is.na(.), "n.s") 
+row.names(comparedf) <- comparedf$X
+mycol <- colorRampPalette(brewer.pal(10, "Pastel2"))(3)
+
+df <- names(comparedf) %>% as.data.frame() %>% row_to_names(row_number = 1) 
+df <-df %>% dplyr::mutate(Region = ifelse(grepl("Away", df$X), "Tumor-depleted", ifelse(grepl("Within", df$X), "Tumor-rich",  ifelse(grepl("All", df$X), "Localization Undivided",  ifelse(grepl("Bulk CD3", df$X), "Bulk T cells",  ifelse(grepl("Whole Data", df$X), "Cell type undivided", "Tumor"))))), SegmentType = ifelse(grepl("EC", df$X), "Early Cytotoxic", ifelse(grepl("ENC", df$X), "Early Helper",  ifelse(grepl("LC", df$X), "Late Cytotoxic",  ifelse(grepl("Bulk CD3", df$X), "Bulk T cells",  ifelse(grepl("Whole Data", df$X), "Cell type undivided",  ifelse(grepl("LNC", df$X), "Late Helper", "Tumor")))))))
+                
+column_ha = HeatmapAnnotation(CellType = df$SegmentType, Region = df$Region, col = list(CellType = c("Tumor"= "#fee391", "Bulk T cells"= "#d4b9da","Cell type undivided"= "navyblue", "Early Cytotoxic"="#41ae76","Early Helper"= "#e7298a","Late Cytotoxic"= "goldenrod2", "Late Helper"="#67a9cf"), Region = c("Tumor"= "#fee391", "Bulk T cells"="#d4b9da","Cell type undivided"= "navyblue", "Localization Undivided"="papayawhip", "Tumor-rich" = "#980043", "Tumor-depleted"="#fd8d3c")))
+
+Heatmap(as.matrix(comparedf %>% select(-c(X))), row_names_gp = gpar(fontsize = 10),  column_names_gp = gpar(fontsize =10),  row_names_centered = FALSE, column_names_centered = FALSE,  show_heatmap_legend = TRUE,  row_names_side = "left", row_labels = comparedf$X, show_row_names = TRUE, rect_gp = gpar(col = "white", lwd = 2), col  = c("HR<1" ='#2ca25f',"HR>1" = '#ef3b2c', "n.s" = "#e0ecf4"), heatmap_legend_param = list(title = "Significance"), top_annotation = column_ha, column_split = df$SegmentType,show_column_names = FALSE, column_title=NULL,row_title=NULL, column_gap  = unit(2, "mm"), border = TRUE)
+
+```
+
+```{r}
+compiled_df <- rbind(Tumor_CM, WD_CM, CD3_CM, EC_All_CM, EC_Away_CM, EC_Within_CM, ENC_All_CM, ENC_Away_CM, ENC_Within_CM, LC_All_CM, LC_Away_CM, LC_Within_CM, LNC_All_CM, LNC_Within_CM)
+significance <- 0.05
+compiled_df <- compiled_df %>% dplyr::filter(Pvalue <= significance) %>% dplyr::filter(Pvalue_check > significance ) %>% dplyr::mutate(Prognosis = ifelse( HR>1, "HR>1", "HR<1") )
+
+comparedf <- compiled_df %>%  select(Biomarkers, Dataset, Prognosis) %>% dcast(Biomarkers~Dataset) %>% as.data.frame() %>% replace(is.na(.), "n.s") 
+row.names(comparedf) <- comparedf$Biomarkers
+mycol <- colorRampPalette(brewer.pal(10, "Pastel2"))(3)
+
+df <- names(comparedf) %>% as.data.frame() %>% row_to_names(row_number = 1) 
+df <-df %>% dplyr::mutate(Region = ifelse(grepl("Away", df$Biomarkers), "Tumor-depleted", ifelse(grepl("Within", df$Biomarkers), "Tumor-rich",  ifelse(grepl("All", df$Biomarkers), "Localization Undivided",  ifelse(grepl("Bulk CD3", df$Biomarkers), "Bulk T cells",  ifelse(grepl("Whole Data", df$Biomarkers), "Cell type undivided", "Tumor"))))), SegmentType = ifelse(grepl("EC", df$Biomarkers), "Early Cytotoxic", ifelse(grepl("ENC", df$Biomarkers), "Early Helper",  ifelse(grepl("LC", df$Biomarkers), "Late Cytotoxic",  ifelse(grepl("Bulk CD3", df$Biomarkers), "Bulk T cells",  ifelse(grepl("Whole Data", df$Biomarkers), "Cell type undivided",  ifelse(grepl("LNC", df$Biomarkers), "Late Helper", "Tumor")))))))
+                
+column_ha = HeatmapAnnotation(CellType = df$SegmentType, Region = df$Region, col = list(CellType = c("Tumor"= "#fee391", "Bulk T cells"= "#d4b9da","Cell type undivided"= "navyblue", "Early Cytotoxic"="#41ae76","Early Helper"= "#e7298a","Late Cytotoxic"= "goldenrod2", "Late Helper"="#67a9cf"), Region = c("Tumor"= "#fee391", "Bulk T cells"="#d4b9da","Cell type undivided"= "navyblue", "Localization Undivided"="mistyrose", "Tumor-rich" = "#980043", "Tumor-depleted"="#fd8d3c")))
+
+Heatmap(as.matrix(comparedf %>% select(-c(Biomarkers))), row_names_gp = gpar(fontsize = 10),  column_names_gp = gpar(fontsize =10),  row_names_centered = FALSE, column_names_centered = FALSE,  show_heatmap_legend = TRUE,  row_names_side = "left", row_labels = comparedf$Biomarkers, show_row_names = TRUE, rect_gp = gpar(col = "white", lwd = 2), col  = c("HR<1" ='#2ca25f',"HR>1" = '#ef3b2c', "n.s" = "#e0ecf4"), heatmap_legend_param = list(title = "Significance"), top_annotation = column_ha, column_split = df$SegmentType,show_column_names = FALSE, column_title=NULL,row_title=NULL, column_gap  = unit(2, "mm"), border = TRUE)
+
+```
+
+
+# Kaplan meier curves for protein list
+
+```{r}
+KMCatCurves(data = ProteomewithOS, inputlist = comparedf$Biomarkers, filterCV = TRUE, PATID = "PATID",CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+<!-- ```{r} -->
+<!-- logrankFilter <- function(data, inputlist, filterCV = FALSE, PATID, CVcutoff = 30, aggregationType = c(NULL, "mean", "median"), SurvCutoff = TRUE, minprop = 0.1){ -->
+<!--   splots <- data.frame() -->
+<!--   for (i in inputlist) { -->
+<!--     data[[i]] <- as.numeric(as.character(data[[i]])) -->
+
+
+<!--     if (filterCV == TRUE) { -->
+<!--       cvlist <- filterCV(data=data, PATID = PATID, names=paste0(i)) -->
+<!--       cvlist <- cvlist %>%  dplyr::filter(CV <= CVcutoff) -->
+
+<!--       data <- subset(data, data$PATID %in% cvlist$PATID) %>% as.data.frame() -->
+<!--     } -->
+
+<!--     aggregationType <- match.arg(aggregationType) -->
+
+<!--     if (aggregationType == "median") { -->
+
+<!--       datanew <- data%>% select(PATID, OS, OS.01, paste0(i)) %>% dplyr::group_by(PATID) %>% summarise_if(is.numeric, median) %>% as.data.frame() -->
+<!--       Median_cutoff <- logrankmedianfilter(inputdata=datanew, i=paste0(i)) -->
+
+<!--       if (SurvCutoff == TRUE) { -->
+
+
+<!--         cutpoint <- surv_cutpoint(datanew,time = "OS",event = "OS.01",variables = paste0(i), minprop = minprop) -->
+<!--         res.cat <- surv_categorize(cutpoint) -->
+<!--         res.cat[[i]] <- as.factor(res.cat[[i]]) -->
+<!--         res.cat<-res.cat[complete.cases(res.cat),] -->
+
+<!--         f1 <- as.formula(paste0("Surv(OS, OS.01) ~", i)) -->
+<!--         fit <- do.call(survdiff, args = list(formula = f1, data = res.cat)) -->
+<!--         Survcutoff <- 1 - pchisq(fit$chisq, length(fit$n) - 1) -->
+
+<!--         collated <-  cbind(paste0(i), Median_cutoff, Survcutoff) -->
+<!--         splots <- splots %>% rbind(collated)   -->
+
+
+<!--       }else { -->
+<!--         collated <-  cbind(paste0(i), Median_cutoff) -->
+<!--         splots <- splots %>% rbind(collated) -->
+<!--       } -->
+
+<!--     } else if (aggregationType == "mean") { -->
+
+<!--       datanew <- data %>% select(PATID, OS, OS.01, paste0(i)) %>%  dplyr::group_by(PATID) %>% summarise_if(is.numeric, mean) %>% as.data.frame() -->
+<!--       Median_cutoff <- logrankmedianfilter(inputdata=datanew, i=paste0(i)) -->
+
+<!--       if (SurvCutoff == TRUE) { -->
+<!--         splots <- list() -->
+<!--         cutpoint <- surv_cutpoint(datanew,time = "OS",event = "OS.01",variables = paste0(i), minprop = minprop) -->
+
+<!--         res.cat <- surv_categorize(cutpoint) -->
+<!--         res.cat[[i]] <- as.factor(res.cat[[i]]) -->
+<!--         res.cat<-res.cat[complete.cases(res.cat),] -->
+
+<!--         f1 <- as.formula(paste0("Surv(OS, OS.01) ~", i)) -->
+<!--         fit <- do.call(survdiff, args = list(formula = f1, data = res.cat)) -->
+<!--         Survcutoff <- 1 - pchisq(fit$chisq, length(fit$n) - 1) -->
+
+<!--         collated <-  cbind(paste0(i), Median_cutoff, Survcutoff) -->
+<!--         splots <- splots %>% rbind(collated)   -->
+
+<!--       }else { -->
+<!--         collated <-  cbind(paste0(i), Median_cutoff) -->
+<!--         splots <- splots %>% rbind(collated) -->
+<!--       } -->
+
+
+<!--     } else if (is.null(aggregationType)) { -->
+<!--       Median_cutoff <- logrankmedianfilter(inputdata=datanew, i=paste0(i)) -->
+
+<!--       if (SurvCutoff == TRUE) { -->
+<!--         splots <- list() -->
+<!--         cutpoint <- surv_cutpoint(data,time = "OS",event = "OS.01",variables = paste0(i), minprop = minprop) -->
+
+<!--         res.cat <- surv_categorize(cutpoint) -->
+<!--         res.cat[[i]] <- as.factor(res.cat[[i]]) -->
+<!--         res.cat<-res.cat[complete.cases(res.cat),] -->
+
+<!--         f1 <- as.formula(paste0("Surv(OS, OS.01) ~", i)) -->
+<!--         fit <- do.call(survdiff, args = list(formula = f1, data = res.cat)) -->
+<!--         Survcutoff <- 1 - pchisq(fit$chisq, length(fit$n) - 1) -->
+<!--         collated <-  cbind(paste0(i), Median_cutoff, Survcutoff) -->
+<!--         splots <- splots %>% rbind(collated)   -->
+
+<!--       }else { -->
+<!--         collated <-  cbind(paste0(i), Median_cutoff) -->
+<!--         splots <- splots %>% rbind(collated) -->
+<!--       } -->
+<!--     } -->
+<!--   } -->
+<!--   return(splots) -->
+<!-- } -->
+
+
+<!-- check <- surv_cutpoint(ProteomewithOS,time = "OS",event = "OS.01",variables = "p53", minprop = 0.1) -->
+<!-- ``` -->
+
+
+<!-- # Functional enrichment  -->
+
+<!-- ```{r} -->
+<!-- Listnames <- comparedf %>%  filter(X!="BAD") %>% select(X) -->
+
+<!-- mappedids <- readxl::read_xlsx("Datafiles/MappedIds_Active.xlsx", sheet = "keggadded") %>% as.data.frame() -->
+<!-- mappedids <- subset(mappedids ,mappedids$ProteinID %in% Listnames$X) %>%  arrange(desc(kegg)) -->
+<!-- eg = bitr(mappedids$ENSEMBL, fromType="ENSEMBL", toType="ENTREZID", OrgDb="org.Hs.eg.db") -->
+
+<!-- genelist <-unique(mappedids$kegg) -->
+<!-- ``` -->
+
+<!-- ## MsigDB enrichment -->
+<!-- ```{r} -->
+<!-- m_t2g <- msigdbr(species = "Homo sapiens", category = "C5") %>% dplyr::select(gs_name, entrez_gene) -->
+<!-- ego1 <- enricher(genelist, TERM2GENE=m_t2g) -->
+<!-- ``` -->
+
+<!-- ### Barplot -->
+<!-- ```{r} -->
+<!-- dplyr::mutate(ego1, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore") -->
+<!-- ``` -->
+
+<!-- ### Dotplot -->
+<!-- ```{r} -->
+<!-- conflict_prefer("desc", "dplyr") -->
+<!-- dotplot(ego1, showCategory=10) -->
+<!-- ``` -->
+
+<!-- ### Upsetplot -->
+<!-- ```{r} -->
+<!-- upsetplot(ego1) -->
+<!-- ``` -->
+
+<!-- ### CnetPlot -->
+<!-- ```{r} -->
+<!-- cnetplot(ego1, foldChange=genelist,circular = TRUE, colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- ``` -->
+
+<!-- ## Kegg enrichment -->
+
+<!-- ```{r} -->
+<!-- kk <- enrichKEGG(gene = eg$ENTREZID, -->
+<!-- organism = 'hsa', -->
+<!-- pvalueCutoff = 0.05) -->
+
+<!-- head(kk) -->
+
+<!-- listID <-  kk@result[["ID"]] %>% as.data.frame() %>% slice_head(n=10) -->
+
+<!-- for (i in listID$.) { -->
+<!--   pathview(gene.data  = genelist, -->
+<!--                    pathway.id = i,  -->
+<!--                      species    = "hsa",kegg.native = T) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ### Barplot -->
+<!-- ```{r} -->
+<!-- dplyr::mutate(kk, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore") -->
+<!-- barplot(kk, showCategory = 20) -->
+<!-- ``` -->
+
+<!-- ### Dotplot -->
+<!-- ```{r} -->
+<!-- dotplot(kk,  showCategory = 10) -->
+<!-- ``` -->
+
+<!-- ### Upsetplot -->
+<!-- ```{r} -->
+<!-- upsetplot(kk) -->
+<!-- ``` -->
+
+<!-- ### CnetPlot -->
+<!-- ```{r} -->
+<!-- cnetplot(kk, foldChange=genelist,colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 1.2,) -->
+<!-- ``` -->
+
+<!-- ## Wikipathways enrichment -->
+<!-- ```{r} -->
+<!-- WP <- enrichWP(genelist, organism = "Homo sapiens")  -->
+<!-- ``` -->
+
+<!-- ### Barplot -->
+<!-- ```{r, ,echo=FALSE, fig.height=3, fig.width=4} -->
+<!-- dplyr::mutate(WP, qscore = -log(p.adjust, base=10)) %>% barplot(x="qscore", showCategory = 15) -->
+<!-- barplot(WP, showCategory = 15) -->
+<!-- ``` -->
+
+<!-- ### Dotplot -->
+<!-- ```{r} -->
+<!-- conflict_prefer("desc", "dplyr") -->
+<!-- dotplot(WP, showCategory=20) -->
+<!-- ``` -->
+
+<!-- ### Upsetplot -->
+<!-- ```{r,echo=FALSE, fig.height=3, fig.width=12} -->
+<!-- #pdf("WP_upsetplot.pdf", width = 40, height = 20) -->
+<!-- upsetplot(WP) -->
+<!-- #dev.off() -->
+<!-- ``` -->
+
+<!-- ### CnetPlot -->
+<!-- ```{r, ,echo=FALSE, fig.height=5, fig.width=12} -->
+<!-- cnetplot(WP, foldChange=genelist,circular = TRUE, colorEdge = TRUE, showCategory = 10, node_label="category",  -->
+<!--         cex_label_category = 0.8) -->
+<!-- ``` -->
+
+
+<!-- # Boxplot analysis with CV removal -->
+
+<!-- ```{r} -->
+<!-- CVcutoff <-10 -->
+<!-- marker <- "FOXP3" -->
+<!-- data_EC <-   Proteome %>% filter(Segment_name_label=="Early Cytotoxic") -->
+<!-- cvlist <- filterCV(data= data_EC,  PATID = "PATID", names=marker) -->
+<!-- cvlist <- cvlist %>%  dplyr::filter(CV <= CVcutoff) -->
+<!-- data_EC <- subset(data_EC, data_EC$PATID %in% cvlist$PATID) %>% as.data.frame() -->
+
+<!-- data_ENC <-   Proteome %>% filter(Segment_name_label=="Early Helper") -->
+<!-- cvlist <- filterCV(data= data_ENC,  PATID = "PATID", names=marker) -->
+<!-- cvlist <- cvlist %>%  dplyr::filter(CV <= CVcutoff) -->
+<!-- data_ENC <- subset(data_ENC, data_ENC$PATID %in% cvlist$PATID) %>% as.data.frame() -->
+
+<!-- data_LC <-   Proteome %>% filter(Segment_name_label=="Late Cytotoxic") -->
+<!-- cvlist <- filterCV(data= data_LC,  PATID = "PATID", names=marker) -->
+<!-- cvlist <- cvlist %>%  dplyr::filter(CV <= CVcutoff) -->
+<!-- data_LC <- subset(data_LC, data_LC$PATID %in% cvlist$PATID) %>% as.data.frame() -->
+
+<!-- data_LNC <-   Proteome %>% filter(Segment_name_label=="Late Helper") -->
+<!-- cvlist <- filterCV(data= data_LNC,  PATID = "PATID", names=marker) -->
+<!-- cvlist <- cvlist %>%  dplyr::filter(CV <= CVcutoff) -->
+<!-- data_LNC <- subset(data_LNC, data_LNC$PATID %in% cvlist$PATID) %>% as.data.frame() -->
+
+<!-- CVfiltereddf <-  rbind(data_EC, data_ENC, data_LC, data_LNC) -->
+
+<!-- my_comparisons <- list( c("Early Cytotoxic", "Early Helper"), c("Early Cytotoxic", "Late Cytotoxic"), c("Early Cytotoxic", "Late Helper") ) -->
+
+<!-- Proteome %>% ggplot(aes(x=Segment_name_label, y=FOXP3, fill = Segment_name_label)) + -->
+<!--   geom_violin(alpha = 0.6) + -->
+<!--   geom_jitter(width=0.2, height=0.1, alpha = 0.2, size = 2) + -->
+<!--   stat_compare_means(comparisons = my_comparisons)+ # Add pairwise comparisons p-value -->
+<!--   stat_compare_means(label.y = 9)  +   # Add global p-value -->
+<!--   theme(axis.ticks.x = element_line(size = 0.1),axis.title.y = element_text(size = 12),panel.background = element_rect(fill = "white"),panel.border = element_rect(fill = NA), legend.position = "none", legend.title = element_blank(), legend.text = element_text(size = 10))  -->
+<!-- ``` -->
