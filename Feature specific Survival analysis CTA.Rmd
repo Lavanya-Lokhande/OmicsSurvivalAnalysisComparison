@@ -1,0 +1,221 @@
+---
+title: "Feature specific survival analysis for CTA, CV set as FALSE"
+author: "Lavanya"
+output:
+  BiocStyle::html_document:
+    toc_float: true
+    toc_depth: 4
+vignette: >
+  %\VignetteIndexEntry{Feature specific survival analysis for CTA, CV set as FALSE}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Calling for packages 
+
+```{r}
+packagelist <- c("reshape", "ggrepel", "ggplot2","dplyr","tidyverse", "formattable","ComplexHeatmap", "pheatmap", "readxl","RColorBrewer","survminer", "survival", "patchwork", "coxme", "conflicted","kableExtra","wesanderson","broom", "gridExtra", "writexl", "GetoptLong","corrplot", "ggpmisc")
+
+for (i in packagelist){
+ suppressPackageStartupMessages(library(i, character.only = TRUE))
+}
+source("Function list.R")
+
+conflicts_prefer(dplyr::rename)
+conflict_prefer("filter", "dplyr")
+source("Uni_multi_coxme_Aug2022.r")
+```
+
+# Palettes used
+
+```{r}
+customGreen0 = "#DeF7E9"
+customGreen = "#71CA97"
+customRed = "#ff7f7f"
+
+cols = c("up" = "#e41a1c", "down" = "blue", "ns" = "grey", "DE" = "#ffad73")
+cols = c("Enriched in low" = "red", "Enriched in high" = "blue", "ns" = "grey")
+myPalette <- colorRampPalette(rev(brewer.pal(11, "Spectral")))
+
+sizes <- c("Enriched in low" = 2, "Enriched in high" = 2, "ns" = 1, "DE" = 2)
+
+cols2 <- brewer.pal(n = 9, name = "Spectral")
+pal1 <- colorRampPalette(cols2)
+
+cols3 <- brewer.pal(n = 11, name = "RdBu")
+pal2 <- colorRampPalette(cols3)
+
+my_colour = list(Direction = c("Enriched in low" = "#5977ff", "Enriched in high" = "#f74747"), `Within the tumor` = c("Away" = "#1B9E77", "Within"="#D95F02"))
+heatmap_color <- colorRampPalette(c("green", "black", "firebrick3"))(50)
+
+
+#paired_pat <- readxl::read_xlsx("Datafiles/Paired-PATID.xlsx") 
+#writexl::write_xlsx(paired_pat, "Paired-PATID.xlsx")
+```
+
+# IMPORTANT LINKS - 
+
+https://stats.stackexchange.com/questions/411689/cox-regression-different-results-with-different-combinations-of-variables/411817#411817
+https://stats.stackexchange.com/questions/68834/what-is-the-benefit-of-breaking-up-a-continuous-predictor-variable https://stats.stackexchange.com/questions/411804/how-to-choose-the-best-combination-of-covariates-in-cox-multiple-regression
+https://stackoverflow.com/questions/69780549/convert-cox-regression-table-to-forest-plot
+
+# Calling for input normalyzed data
+
+```{r}
+CTA <- readxl::read_xlsx("Datafiles/Project_3_immune_MTC_MTH_Sep2023.xlsx") %>% as.data.frame() 
+
+n <- 1481 ## total number of probes excluding NPC
+s <- ncol(CTA)-n 
+startwithNPC <- s-1 
+e <- ncol(CTA)
+
+head(CTA[,s:e])
+
+tumormrna <- read_excel("Datafiles/MCD20_Sep 2023.xlsx") %>% as.data.frame() 
+
+tumormrna %>% select(PATID) %>% distinct()
+```
+
+## Clinical data updated November 2022
+
+```{r} 
+newclinicaldata <- read_excel("Datafiles/BLISS DATABASE NOVEMBER 2022 - NBIS.xlsx") %>% as.data.frame()
+```
+
+## Subsetting the main df
+
+```{r}
+CTA_tumor <-  inner_join(newclinicaldata, tumormrna, by = "PATID")
+CTA_cyto <- inner_join(newclinicaldata, CTA, by = "PATID") %>% dplyr::filter(SegmentLabelNew == "MTC")
+CTA_helper <- inner_join(newclinicaldata, CTA, by = "PATID") %>% dplyr::filter(SegmentLabelNew == "MTH")
+```
+
+# Comparing to cox model formulas to optimise for best model
+
+Function adapted from  http://rstudio-pubs-static.s3.amazonaws.com/16621_8843f393472f4e8793435462d8c4859e.html 
+
+NOTE - 
+""Oka suggested using frailty in connection with coxph in order to test the proportional hazard assumption. I believe it is worth noting that the documentation for frailty mentions, "the coxme package has superseded this [frailty] method." For this reason, the original question about "how to test the PH assumption on mixed effect cox model coxme," has strong justification to stay within the scope of coxme."" - Stack Overflow
+
+USING COX.ZPH to check for the validity of Cox - https://stats.stackexchange.com/questions/254471/coxme-proportional-hazard-assumption 
+
+```{r}
+fit0 <- coxph(Surv(as.numeric(as.character(CTA_tumor$OS)), as.numeric(as.character(CTA_tumor$OS.01))) ~ 1, data=CTA_tumor)
+fit1 <- coxph(Surv(as.numeric(as.character(CTA_tumor$OS)), as.numeric(as.character(CTA_tumor$OS.01))) ~ MS4A1, data=CTA_tumor)
+#Random effects are specified in the formula by a parenthesised expression which contains a vertical bar separating effects on the left from grouping variables on the right. In the case above we read it as an intercept (effect) per center (group).
+fit2 <- coxme(Surv(as.numeric(as.character(CTA_tumor$OS)), as.numeric(as.character(CTA_tumor$OS.01))) ~ MS4A1+ (1|PATID), data=CTA_tumor)
+
+Compare_models(baseModel = fit0,coxphModel=fit1, coxmeModel=fit2)
+```
+
+
+# Cox regression models
+
+## Tumor
+
+### All tumor patients
+
+```{r}
+n <- 1481 ## total number of probes excluding NPC
+s <- ncol(CTA_tumor)-n 
+e <- ncol(CTA_tumor)
+
+Inputlist_T <- Uni_multi_coxme(data = CTA_tumor, name = "Tumor All", s = s, e = e, uniquefactortype = NULL, significance = 0.05, outputfilepath = "CTA feature specific survival Result_images/", PATID = "PATID", SegmentLabel = "SegmentLabelNew", Time = "OS", Event = "OS.01", printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, CVcutoff = 30)
+
+KMCatCurves(data = CTA_tumor, inputlist = rownames(Inputlist_T), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1)
+```
+
+
+## Cytotoxic
+
+### All Cytotoxic patients
+
+```{r}
+n <- 1481 ## total number of probes excluding NPC
+s <- ncol(CTA_cyto)-n 
+e <- ncol(CTA_cyto)
+
+Inputlist_C <- Uni_multi_coxme(data = CTA_cyto, name = "Cytotoxic (All)", s = s, e = e, uniquefactortype = NULL, significance = 0.05, outputfilepath = "CTA feature specific survival Result_images/", PATID = "PATID", SegmentLabel = "SegmentLabelNew", Time = "OS", Event = "OS.01", printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, CVcutoff = 30)
+```
+
+```{r}
+KMCatCurves(data = CTA_cyto, inputlist = rownames(Inputlist_C), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1)
+```
+
+### Cytotoxic segmented "Tumor-rich area" 
+
+```{r}
+CTA_subset <- CTA_cyto %>% dplyr::filter(Within.the.tumor=="Tumor-rich")
+n <- 1481 ## total number of probes excluding NPC
+s <- ncol(CTA_subset)-n 
+e <- ncol(CTA_subset)
+
+
+Inputlist_C_TR <- Uni_multi_coxme(data = CTA_subset, name = "Cytotoxic Tumor-rich area", s = s, e = e, uniquefactortype = NULL, significance = 0.05, outputfilepath = "CTA feature specific survival Result_images/", PATID = "PATID", SegmentLabel = "SegmentLabelNew", Time = "OS", Event = "OS.01", printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, CVcutoff = 30)
+
+KMCatCurves(data = CTA_subset, inputlist = rownames(Inputlist_C_TR), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1)
+```
+
+### Cytotoxic segmented "Tumor-sparse area" 
+
+```{r}
+CTA_subset <- CTA_cyto %>% dplyr::filter(Within.the.tumor=="Tumor-sparse")
+n <- 1481 ## total number of probes excluding NPC
+s <- ncol(CTA_subset)-n 
+e <- ncol(CTA_subset)
+
+Inputlist_C_TS <- Uni_multi_coxme(data = CTA_subset, name = "Cytotoxic Tumor-sparse area", s = s, e = e, uniquefactortype = NULL, significance = 0.05, outputfilepath = "CTA feature specific survival Result_images/", PATID = "PATID", SegmentLabel = "SegmentLabelNew", Time = "OS", Event = "OS.01", printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, CVcutoff = 30)
+
+KMCatCurves(data = CTA_subset, inputlist = rownames(Inputlist_C_TS), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1)
+```
+
+
+## Helper
+
+### All Helper patients
+
+```{r}
+n <- 1481 ## total number of probes excluding NPC
+s <- ncol(CTA_helper)-n 
+e <- ncol(CTA_helper)
+
+Inputlist_H <- Uni_multi_coxme(data = CTA_helper, name = "Helper (All)", s = s, e = e, uniquefactortype = NULL, significance = 0.05, outputfilepath = "CTA feature specific survival Result_images/", PATID = "PATID", SegmentLabel = "SegmentLabelNew", Time = "OS", Event = "OS.01", printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, CVcutoff = 30)
+```
+
+```{r}
+KMCatCurves(data = CTA_helper, inputlist = rownames(Inputlist_H), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1)
+```
+
+### Helper segmented "Tumor-rich area" 
+
+```{r}
+CTA_subset <- CTA_helper %>% dplyr::filter(Within.the.tumor=="Tumor-rich")
+n <- 1481 ## total number of probes excluding NPC
+s <- ncol(CTA_subset)-n 
+e <- ncol(CTA_subset)
+
+Inputlist_H_TR <- Uni_multi_coxme(data = CTA_subset, name = "Helper (Tumor-rich)", s = s, e = e, uniquefactortype = NULL, significance = 0.05, outputfilepath = "CTA feature specific survival Result_images/", PATID = "PATID", SegmentLabel = "SegmentLabelNew", Time = "OS", Event = "OS.01", printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, CVcutoff = 30)
+```
+
+```{r}
+KMCatCurves(data = CTA_subset, inputlist = rownames(Inputlist_H_TR), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1)
+```
+
+### Helper segmented "Tumor-sparse area" 
+
+```{r}
+CTA_subset <- CTA_helper %>% dplyr::filter(Within.the.tumor=="Tumor-sparse")
+n <- 1481 ## total number of probes excluding NPC
+s <- ncol(CTA_subset)-n 
+e <- ncol(CTA_subset)
+
+Inputlist_H_TS <- Uni_multi_coxme(data = CTA_subset, name = "Helper (Tumor-sparse)", s = s, e = e, uniquefactortype = NULL, significance = 0.05, outputfilepath = "CTA feature specific survival Result_images/", PATID = "PATID", SegmentLabel = "SegmentLabelNew", Time = "OS", Event = "OS.01", printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, CVcutoff = 30)
+```
+
+```{r}
+KMCatCurves(data = CTA_subset, inputlist = rownames(Inputlist_H_TS), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1)
+```

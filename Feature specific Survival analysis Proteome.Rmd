@@ -1,0 +1,511 @@
+---
+title: "Feature specific survival analysis - Protein, without CV"
+author: "Lavanya"
+date: "11/29/2021"
+output:
+  BiocStyle::html_document:
+    toc_float: true
+vignette: >
+  %\VignetteIndexEntry{Feature specific survival analysis - Protein, without CV}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Calling for packages 
+
+```{r}
+packagelist <- c("reshape", "ggrepel", "ggplot2","dplyr","tidyverse", "formattable","ComplexHeatmap", "pheatmap", "readxl","RColorBrewer","survminer", "survival", "patchwork", "coxme", "conflicted","kableExtra","wesanderson","broom", "gridExtra", "writexl", "GetoptLong","corrplot")
+
+for (i in packagelist){
+ suppressPackageStartupMessages(library(i, character.only = TRUE))
+}
+
+source("Function list.R") 
+source("KMCatCurves.R")
+source("Uni_multi_coxme_Aug2022.r")
+
+conflict_prefer("filter", "dplyr")
+conflicts_prefer(dplyr::rename)
+```
+
+# IMPORTANT LINKS - 
+
+https://stats.stackexchange.com/questions/411689/cox-regression-different-results-with-different-combinations-of-variables/411817#411817
+https://stats.stackexchange.com/questions/68834/what-is-the-benefit-of-breaking-up-a-continuous-predictor-variable https://stats.stackexchange.com/questions/411804/how-to-choose-the-best-combination-of-covariates-in-cox-multiple-regression
+https://stackoverflow.com/questions/69780549/convert-cox-regression-table-to-forest-plot
+
+# Clinical data updated November 2022
+
+```{r} 
+newclinicaldata <- read_excel("Datafiles/BLISS DATABASE NOVEMBER 2022 - NBIS.xlsx") %>% as.data.frame()
+```
+
+# T-cell Protein Expression file
+
+```{r}
+Proteome <- readxl::read_xlsx("Datafiles/Project2_Protein_all immune subtypes_Sep2023.xlsx") %>% 
+  as.data.frame()  %>% 
+  rename("Within.the.tumor"="Within.the.tumor_June2023") %>%  
+  dplyr::filter(Within.the.tumor !="Exclude") 
+
+ProteomewithOS <- inner_join(newclinicaldata, Proteome, by = "PATID")
+  
+ProteomewithOS$OS <- as.numeric(as.character(ProteomewithOS$OS))
+ProteomewithOS$OS.01 <- as.numeric(as.character(ProteomewithOS$OS.01))
+
+np <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS)
+s <- e-np+1
+
+Proteome %>% select(PATID) %>% distinct()
+
+ProteomewithOS[,s:e]
+```
+
+# Comparing to cox model formulas to optimise for best model
+
+Function adapted from  http://rstudio-pubs-static.s3.amazonaws.com/16621_8843f393472f4e8793435462d8c4859e.html 
+
+NOTE - 
+""Oka suggested using frailty in connection with coxph in order to test the proportional hazard assumption. I believe it is worth noting that the documentation for frailty mentions, "the coxme package has superseded this [frailty] method." For this reason, the original question about "how to test the PH assumption on mixed effect cox model coxme," has strong justification to stay within the scope of coxme."" - Stack Overflow
+
+USING COX.ZPH to check for the validity of Cox - https://stats.stackexchange.com/questions/254471/coxme-proportional-hazard-assumption 
+
+```{r}
+fit0 <- coxph(Surv(as.numeric(as.character(ProteomewithOS$OS)), as.numeric(as.character(ProteomewithOS$OS.01))) ~ 1, data=ProteomewithOS)
+fit1 <- coxph(Surv(as.numeric(as.character(ProteomewithOS$OS)), as.numeric(as.character(ProteomewithOS$OS.01))) ~ IDO1, data=ProteomewithOS)
+#Random effects are specified in the formula by a parenthesised expression which contains a vertical bar separating effects on the left from grouping variables on the right. In the case above we read it as an intercept (effect) per center (group).
+fit2 <- coxme(Surv(as.numeric(as.character(ProteomewithOS$OS)), as.numeric(as.character(ProteomewithOS$OS.01))) ~ IDO1+ (1|PATID), data=ProteomewithOS)
+
+Compare_models(baseModel = fit0,coxphModel=fit1, coxmeModel=fit2)
+```
+
+# Cox regression models
+
+## Whole data 
+```{r}
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS)
+s <- e-n+1
+
+Inputlistdf <- Uni_multi_coxme(data = ProteomewithOS, name = "Whole data", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS, inputlist = c(rownames(Inputlistdf), "IDO1", "GITR"), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+## Early Cytotoxic
+
+### All patients (not segmented in localization)
+
+```{r}
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Early Cytotoxic")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_EC_all <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Early Cytotoxic All", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = c(rownames(Inputlistdf_EC_all), "IDO1", "GITR"), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Within The Tumor
+
+```{r}
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Early Cytotoxic") %>% dplyr::filter(Within.the.tumor=="Tumor-rich")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_EC_W <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Early Cytotoxic Within", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = c(rownames(Inputlistdf_EC_W), "IDO1", "GITR"), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Away from the Tumor
+
+```{r}
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Early Cytotoxic") %>% dplyr::filter(Within.the.tumor=="Tumor-sparse")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_EC_A <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Early Cytotoxic Away", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = c(rownames(Inputlistdf_EC_A), "IDO1", "GITR"), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+## Early Helper
+
+### All patients (not segmented in localization)
+
+```{r}
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Early Helper")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_ENC_all <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Early Helper All", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = c(rownames(Inputlistdf_ENC_all), "IDO1", "GITR"), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Within The Tumor
+
+```{r}
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Early Helper") %>% dplyr::filter(Within.the.tumor=="Tumor-rich")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_ENC_W <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Early Helper Within", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = c(rownames(Inputlistdf_ENC_W), "IDO1", "GITR"), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Away from the Tumor
+
+```{r}
+source("Uni_multi_coxme_Aug2022.r")
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Early Helper") %>% dplyr::filter(Within.the.tumor=="Tumor-sparse")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_ENC_A <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Early Helper Away", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = c(rownames(Inputlistdf_ENC_A), "IDO1", "GITR"), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+
+## Late Helper
+
+### All patients (not segmented in localization)
+
+```{r}
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Late Helper")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_LNC_all <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Late Helper All", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = c(rownames(Inputlistdf_LNC_all), "IDO1", "GITR"), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Within The Tumor
+
+```{r}
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Late Helper") %>% dplyr::filter(Within.the.tumor=="Tumor-rich")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_LNC_W <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Late Helper Within", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = c(rownames(Inputlistdf_LNC_W), "IDO1", "GITR"), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Away from the Tumor
+
+Only 7 samples remained
+
+```{r}
+# ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Late Helper") %>% dplyr::filter(Within.the.tumor=="Tumor-sparse")
+# n <- 62 ## no of markers (- histone_H3)
+# e <- ncol(ProteomewithOS_subset)
+# s <- e-n+1
+# 
+# Inputlistdf_LNC_A <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Late Helper Away", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+# 
+# KMCatCurves(data = ProteomewithOS_subset, inputlist = rownames(Inputlistdf_LNC_A), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+## Late Cytotoxic
+
+### All patients (not segmented in localization)
+
+```{r}
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Late Cytotoxic")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_LC_all <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Late Cytotoxic All", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = rownames(Inputlistdf_LC_all), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Within The Tumor
+
+```{r}
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Late Cytotoxic") %>% dplyr::filter(Within.the.tumor=="Tumor-rich")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_LC_W <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Late Cytotoxic Within", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = rownames(Inputlistdf_LC_W), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Away from the Tumor
+
+Only 10 samples remained
+
+```{r}
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(SegmentLabel == "Late Cytotoxic") %>% dplyr::filter(Within.the.tumor=="Tumor-sparse")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset)
+s <- e-n+1
+
+Inputlistdf_LC_A <- Uni_multi_coxme(data = ProteomewithOS_subset, name = "Late Cytotoxic Away", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset, inputlist = rownames(Inputlistdf_LC_A), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+## All subtypes segmented "Within the tumor", paired 39 patients 
+
+```{r}
+test <- inner_join(ProteomewithOS %>% dplyr::filter(Within.the.tumor=="Tumor-sparse") %>% dplyr::select(PATID, SegmentLabel) %>% mutate(combined = paste0(PATID, SegmentLabel)), ProteomewithOS %>% dplyr::filter(Within.the.tumor=="Tumor-rich") %>% dplyr::select(PATID, SegmentLabel)%>% mutate(combined = paste0(PATID, SegmentLabel)), by = "combined") 
+
+paired_pat <- unique(test$PATID.x)
+
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(PATID %in% paired_pat)
+
+test <- ProteomewithOS_subset%>% dplyr::filter(Within.the.tumor=="Tumor-rich") %>% select(PATID)
+length(unique(test$PATID))
+```
+
+### Early Cytotoxic
+
+```{r}
+ProteomewithOS_subset2 <- ProteomewithOS_subset %>% dplyr::filter(SegmentLabel == "Early Cytotoxic", Within.the.tumor=="Tumor-rich")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset2)
+s <- e-n+1
+
+Inputlistdf_EC_PP <- Uni_multi_coxme(data = ProteomewithOS_subset2, name = "Early Cytotoxic Within Paired", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset2, inputlist = rownames(Inputlistdf_EC_PP), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Early Helper
+
+```{r}
+ProteomewithOS_subset2 <- ProteomewithOS_subset %>% dplyr::filter(SegmentLabel == "Early Helper", Within.the.tumor=="Tumor-rich")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset2)
+s <- e-n+1
+
+Inputlistdf_ENC_PP <- Uni_multi_coxme(data = ProteomewithOS_subset2, name = "Early Helper Within Paired", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset2, inputlist = rownames(Inputlistdf_ENC_PP), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Late Cytotoxic
+
+```{r}
+ProteomewithOS_subset2 <- ProteomewithOS_subset %>% dplyr::filter(SegmentLabel == "Late Cytotoxic", Within.the.tumor=="Tumor-rich")
+
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset2)
+s <- e-n+1
+
+Inputlistdf_LC_PP <- Uni_multi_coxme(data = ProteomewithOS_subset2, name = "Late Cytotoxic Within Paired", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset2, inputlist = rownames(Inputlistdf_LC_PP), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Late Helper
+
+```{r}
+ProteomewithOS_subset2 <- ProteomewithOS_subset %>% dplyr::filter(SegmentLabel == "Late Helper", Within.the.tumor=="Tumor-rich")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset2)
+s <- e-n+1
+
+Inputlistdf_LNC_PP <- Uni_multi_coxme(data = ProteomewithOS_subset2, name = "Late Helper Within Paired", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset2, inputlist = rownames(Inputlistdf_LNC_PP), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+## All subtypes segmented "Within the tumor", not paired 39 patients 
+
+```{r}
+`%NOTin%` <- Negate(`%in%`)
+ProteomewithOS_subset <- ProteomewithOS %>% dplyr::filter(PATID %NOTin% paired_pat)
+
+test <- ProteomewithOS_subset%>% dplyr::filter(Within.the.tumor=="Tumor-rich") %>% select(PATID)
+length(unique(test$PATID))
+```
+
+### Early Cytotoxic
+
+```{r}
+ProteomewithOS_subset2 <- ProteomewithOS_subset %>% dplyr::filter(SegmentLabel == "Early Cytotoxic", Within.the.tumor=="Tumor-rich")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset2)
+s <- e-n+1
+
+Inputlistdf_EC_NPP <- Uni_multi_coxme(data = ProteomewithOS_subset2, name = "Early Cytotoxic Within NotPaired", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset2, inputlist = rownames(Inputlistdf_EC_NPP), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Early Helper
+
+```{r}
+ProteomewithOS_subset2 <- ProteomewithOS_subset %>% dplyr::filter(SegmentLabel == "Early Helper", Within.the.tumor=="Tumor-rich")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset2)
+s <- e-n+1
+
+Inputlistdf_ENC_NPP <- Uni_multi_coxme(data = ProteomewithOS_subset2, name = "Early Helper Within NotPaired", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset2, inputlist = rownames(Inputlistdf_ENC_NPP), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Late Cytotoxic
+
+```{r}
+ProteomewithOS_subset2 <- ProteomewithOS_subset %>% dplyr::filter(SegmentLabel == "Late Cytotoxic", Within.the.tumor=="Tumor-rich")
+
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset2)
+s <- e-n+1
+
+Inputlistdf_LC_NPP <- Uni_multi_coxme(data = ProteomewithOS_subset2, name = "Late Cytotoxic Within NotPaired", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset2, inputlist = rownames(Inputlistdf_LC_NPP), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+### Late Helper
+
+```{r}
+ProteomewithOS_subset2 <- ProteomewithOS_subset %>% dplyr::filter(SegmentLabel == "Late Helper", Within.the.tumor=="Tumor-rich")
+n <- 62 ## no of markers (- histone_H3)
+e <- ncol(ProteomewithOS_subset2)
+s <- e-n+1
+
+Inputlistdf_LNC_NPP <- Uni_multi_coxme(data = ProteomewithOS_subset2, name = "Late Helper Within NotPaired", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = ProteomewithOS_subset2, inputlist = rownames(Inputlistdf_LNC_NPP), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+## Tumor Cells
+
+```{r}
+n <- 62 ## no of markers (- neg)
+
+CD20prot <- read_excel("Datafiles/PCD20_Sep2023.xlsx") %>% as.data.frame() %>% rename("X4.1BB"="4.1BB")
+
+CD20protwithOS <- inner_join(newclinicaldata, CD20prot, by = "PATID") %>% as.data.frame()
+e <- ncol(CD20protwithOS)
+s <- e-n+1
+
+CD20protwithOS$OS <- as.numeric(as.character(CD20protwithOS$OS))
+CD20protwithOS$OS.01 <- as.numeric(as.character(CD20protwithOS$OS.01))
+
+Inputlistdf_Tumor <- Uni_multi_coxme(data = CD20protwithOS, name = "Tumor", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = CD20protwithOS, inputlist = rownames(Inputlistdf_Tumor), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+```
+
+## Bulk CD3+ T Cells
+
+```{r}
+CD3prot<- read_excel("Datafiles/PCD3_Sep2023.xlsx") %>% as.data.frame()  %>% rename("X4.1BB"="4.1BB")
+CD3protwithOS <- inner_join(newclinicaldata, CD3prot, by = "PATID") %>% as.data.frame()
+n=62
+e <- ncol(CD3protwithOS)
+s <- e-n+1
+
+Inputlistdf_CD3 <- Uni_multi_coxme(data = CD3protwithOS, name = "CD3 Bulk", s=s, e=e, outputfilepath ="Results_images_featurespecific/", uniquefactortype  = "SegmentLabel",printforest = FALSE, multivariatetype = "Aggregated Mean", filterCV = FALSE, Time = "OS",Event = "OS.01", CVcutoff = 30, PATID = "PATID", significance = 0.05)
+
+KMCatCurves(data = CD3protwithOS, inputlist = rownames(Inputlistdf_CD3), filter = FALSE, filterCV = FALSE, PATID = "PATID", CVcutoff = 30, aggregationType = "mean", minprop = 0.1, SurvCutoff = TRUE)
+
+CD3protwithOS[,s:e]
+```
+
+## Treatment subset 
+
+### NLG-MCL2
+
+```{r}
+# "NLG-MCL2"     "Bendamustin"  NA             "Chlorambucil" "CHOP"     
+unique(CD20protwithOS$Treatment)
+data <- CD20protwithOS %>%  dplyr::filter(Treatment == "NLG-MCL2") %>% as.data.frame()
+datanew <- data %>% dplyr::group_by(PATID) %>% summarise_if(is.numeric, median) %>% as.data.frame()
+
+cutpoint <- surv_cutpoint(datanew,time = "OS",event = "OS.01",variables = "BIM", minprop = 0.1)
+plot(cutpoint) 
+res.cat <- surv_categorize(cutpoint)
+fit <- survfit(Surv(as.numeric(as.character(OS)), as.numeric(as.character(OS.01))) ~ BIM, data = res.cat)
+survminer::ggsurvplot(fit, data = res.cat, pval = TRUE, conf.int = TRUE,
+                                       risk.table = TRUE, # Add risk table
+                                       risk.table.col = "strata", # Change risk table color by groups
+                                       linetype = "strata", # Change line type by groups
+                                       surv.median.line = "hv", # Specify median survival
+                                       ggtheme = theme_bw(), # Change ggplot2 theme
+                                       title = "Surv cutpoint",
+                                       palette = c("#02818a", "#ae017e"),
+                                       legend.labs = c("High", "Low"), font.x = 10, font.y = 10,font.legend = 10, font.title=8)
+        
+
+med <-  median(as.numeric(as.character(datanew$BIM)), na.rm = TRUE)
+datanew <- datanew %>% mutate(Cat = ifelse(datanew$BIM<med, "Low", "High"))
+  
+fit <- survfit(Surv(as.numeric(as.character(OS)), as.numeric(as.character(OS.01))) ~ Cat, data = datanew)
+
+plot <- survminer::ggsurvplot(fit, data = datanew, pval = TRUE, conf.int = TRUE,
+risk.table = TRUE, # Add risk table
+risk.table.col = "strata", # Change risk table color by groups
+linetype = "strata", # Change line type by groups
+surv.median.line = "hv", # Specify median survival
+ggtheme = theme_bw(), # Change ggplot2 theme
+title = "Median cutpoint",palette = c("#02818a", "#ae017e"))
+print(plot)
+```
+
+### Bendamustin
+
+```{r}
+# "NLG-MCL2"     "Bendamustin"  NA             "Chlorambucil" "CHOP"     
+unique(CD20protwithOS$Treatment)
+data <- CD20protwithOS %>%  dplyr::filter(Treatment == "R-Bendamustine") %>% as.data.frame()
+datanew <- data %>% dplyr::group_by(PATID) %>% summarise_if(is.numeric, median) %>% as.data.frame()
+
+cutpoint <- surv_cutpoint(datanew,time = "OS",event = "OS.01",variables = "BIM", minprop = 0.1)
+plot(cutpoint) 
+res.cat <- surv_categorize(cutpoint)
+fit <- survfit(Surv(as.numeric(as.character(OS)), as.numeric(as.character(OS.01))) ~ BIM, data = res.cat)
+survminer::ggsurvplot(fit, data = res.cat, pval = TRUE, conf.int = TRUE,
+                                       risk.table = TRUE, # Add risk table
+                                       risk.table.col = "strata", # Change risk table color by groups
+                                       linetype = "strata", # Change line type by groups
+                                       surv.median.line = "hv", # Specify median survival
+                                       ggtheme = theme_bw(), # Change ggplot2 theme
+                                       title = "Surv cutpoint",
+                                       palette = c("#02818a", "#ae017e"),
+                                       legend.labs = c("High", "Low"), font.x = 10, font.y = 10,font.legend = 10, font.title=8)
+        
+
+med <-  median(as.numeric(as.character(datanew$BIM)), na.rm = TRUE)
+datanew <- datanew %>% mutate(Cat = ifelse(datanew$BIM<med, "Low", "High"))
+  
+fit <- survfit(Surv(as.numeric(as.character(OS)), as.numeric(as.character(OS.01))) ~ Cat, data = datanew)
+
+plot <- survminer::ggsurvplot(fit, data = datanew, pval = TRUE, conf.int = TRUE,
+risk.table = TRUE, # Add risk table
+risk.table.col = "strata", # Change risk table color by groups
+linetype = "strata", # Change line type by groups
+surv.median.line = "hv", # Specify median survival
+ggtheme = theme_bw(), # Change ggplot2 theme
+title = "Median cutpoint",palette = c("#02818a", "#ae017e"))
+print(plot)
+```
+
