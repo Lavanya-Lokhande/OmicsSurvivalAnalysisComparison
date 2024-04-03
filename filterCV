@@ -1,0 +1,15 @@
+filterCV <- function(data, PATID, names){
+  cvlist <- data.frame()
+  k = 1
+  for (i in unique(data$PATID)) {
+    my_data_subset <- data %>% filter(data$PATID==i)
+    cv <- sd(my_data_subset[[names]]) / mean(my_data_subset[[names]]) * 100
+    cvlist[k,1] <- i
+    cvlist[k,2] <- cv
+    k = k+1
+  }
+  cvlist <- as.data.frame(cvlist) %>% `colnames<-`(c("PATID", "CV"))
+  cvlist$CV <- cvlist$CV %>%  replace_na(0)
+  return(cvlist)
+  
+}
